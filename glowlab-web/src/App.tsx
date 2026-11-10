@@ -29,7 +29,7 @@ function AuthScreen() {
   return (
     <div className="auth-wrap">
       <div className="auth-card">
-        <h1>✨ GlowLab</h1>
+        <h1 className="brand"><img src="/icon-192.png" alt="" className="brand-mark" />GlowLab</h1>
         <p className="muted">Photograph the house, trace the lines, show the glow, quote the job.</p>
         <form onSubmit={submit} className="form">
           {mode === 'register' && <label>Business / your name<input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Bright Nights Lighting" /></label>}
@@ -65,7 +65,7 @@ function Shell() {
   return (
     <div className="shell">
       <header className="no-print">
-        <span className="logo">✨ GlowLab</span>
+        <span className="logo brand"><img src="/icon-192.png" alt="" className="brand-mark" />GlowLab</span>
         <nav>
           <button className={tab === 'projects' && !open ? 'nav active' : 'nav'} onClick={() => { setTab('projects'); setOpen(null); }}>Projects</button>
           <button className={tab === 'settings' ? 'nav active' : 'nav'} onClick={() => { setTab('settings'); setOpen(null); }}>Settings</button>

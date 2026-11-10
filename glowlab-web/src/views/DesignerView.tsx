@@ -484,7 +484,7 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
 
       {showQuote && estimate && (
         <section className="quote">
-          <h2>✨ GlowLab — Holiday Lighting Estimate</h2>
+          <h2 className="brand"><img src="/icon-192.png" alt="" className="brand-mark" />GlowLab — Holiday Lighting Estimate</h2>
           <p><strong>{project.clientName}</strong>{project.address ? ` — ${project.address}` : ''}<br />
             Design: <strong>{preset.name}</strong> — {INSTALL_TYPE_LABELS[opts.installType]} ({opts.installType === 'permanent' ? 'permanent LED' : preset.bulbSize}, {profile.bulbSpacingInches}&quot; spacing)</p>
           <HouseStage project={project} preset={preset} spacingInches={profile.bulbSpacingInches} installType={opts.installType} night={night} />

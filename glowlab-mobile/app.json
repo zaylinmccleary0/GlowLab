@@ -1,1 +1,30 @@
-{"expo":{"android":{"package":"com.glowlab.app"},"ios":{"bundleIdentifier":"com.glowlab.app","supportsTablet":true},"name":"GlowLab","newArchEnabled":true,"orientation":"portrait","slug":"glowlab","userInterfaceStyle":"dark","version":"1.0.0"}}
+{
+  "expo": {
+    "name": "GlowLab",
+    "slug": "glowlab",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#003A1F"
+    },
+    "ios": {
+      "bundleIdentifier": "com.glowlab.app",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.glowlab.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#003A1F"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

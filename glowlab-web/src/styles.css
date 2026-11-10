@@ -15,6 +15,8 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-w
 .muted { color: var(--muted); } .small { font-size: 12px; } .error { color: var(--danger); } .center { text-align: center; padding: 40px; }
 .shell header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 20px; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
 .logo { font-size: 20px; font-weight: 800; color: var(--gold); }
+.brand { display: inline-flex; align-items: center; gap: 10px; }
+.brand-mark { width: 1.6em; height: 1.6em; border-radius: 22%; flex: none; }
 nav { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
 button.nav { border: none; background: none; padding: 8px 12px; border-radius: 999px; font-weight: 600; color: var(--muted); }
 button.nav.active { background: var(--gold); color: #231a05; }

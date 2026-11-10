@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../auth';
 import { colors, styles } from '../theme';
 
@@ -26,7 +26,10 @@ export default function AuthScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ padding: 20, gap: 12, paddingTop: 60 }}>
-      <Text style={{ fontSize: 34, fontWeight: '800', color: colors.ink }}>✨ GlowLab</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <Image source={require('../../assets/logo.png')} style={{ width: 52, height: 52, borderRadius: 12 }} accessibilityIgnoresInvertColors />
+        <Text style={{ fontSize: 34, fontWeight: '800', color: colors.ink }}>GlowLab</Text>
+      </View>
       <Text style={styles.muted}>Photograph the house, trace the lines, show the glow, quote the job.</Text>
       {mode === 'register' && (
         <>
