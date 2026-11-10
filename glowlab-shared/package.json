@@ -1,0 +1,1 @@
+{"description":"Shared types, geometry, presets and pricing for GlowLab (web, mobile, server).","devDependencies":{"typescript":"^5.7.2"},"license":"UNLICENSED","main":"dist/index.js","name":"@glowlab/shared","private":true,"scripts":{"build":"tsc","test":"node test/run.mjs"},"types":"dist/index.d.ts","version":"1.0.0"}
