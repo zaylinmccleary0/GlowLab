@@ -2,7 +2,7 @@
 import assert from 'node:assert';
 import {
   PRESETS, DEFAULT_PRICING, getPreset, calibrationPixelsPerFoot, polylineLengthFeet,
-  bulbPositions, computeEstimate, totalFeet, normalizeEstimateOptions, bulbDrawSize, newPricingProfile, validatePricingSettings, bulbColorFor, nearestBulb, lightPools,
+  bulbPositions, computeEstimate, totalFeet, normalizeEstimateOptions, bulbDrawSize, newPricingProfile, validatePricingSettings, bulbColorFor, nearestBulb,
 } from '../dist/index.js';
 
 assert.equal(PRESETS.length, 8);
@@ -51,11 +51,6 @@ assert.equal(bulbPositions(wobble, cal, size, 15).length, 9); // 10 ft => 8 gaps
 // A closed outline (last point back on the first) doesn't double the corner bulb: 4 sides of 10 ft = 32 bulbs
 const box = { id: 'b', kind: 'window', points: [{ x: 0, y: 0 }, { x: 0.1, y: 0 }, { x: 0.1, y: 0.1 }, { x: 0, y: 0.1 }, { x: 0, y: 0 }] };
 assert.equal(bulbPositions(box, cal, size, 15).length, 32);
-
-// Night light pools: ~3 ft across each way, sitting mostly below the bulb
-const pool = lightPools([{ x: 100, y: 100, color: '#fff' }], 10, 1000)[0];
-assert.equal(pool.rx, 30);
-assert.ok(pool.cy > 100 && pool.cy - pool.ry < 100 && pool.cy - pool.ry > 90);
 
 // Candy-cane pattern alternates via index: even = red #FF2D2D, odd = warm white #FFD9A0
 const candy = getPreset('candy-cane');

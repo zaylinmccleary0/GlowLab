@@ -39,37 +39,3 @@ export function bulbDrawSize(pixelsPerFoot: number, imageWidth: number, installT
   };
 }
 
-/**
- * Night mode "house lit up": where each bulb's light lands on the house, as soft
- * ellipses in image pixels. The light pools mostly below and around the bulb
- * (onto the siding, fascia and roof under the line) and barely reaches above it,
- * so the sky stays dark. About 3 ft to each side and ~8 ft down the wall, scaled by the calibration.
- */
-export interface LightPool { cx: number; cy: number; rx: number; ry: number; color: string }
-
-export function lightPools(
-  bulbs: { x: number; y: number; color: string }[], pixelsPerFoot: number, imageWidth: number,
-): LightPool[] {
-  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-  const rx = clamp(3 * pixelsPerFoot, imageWidth * 0.015, imageWidth * 0.12);
-  const ry = rx * 1.6;
-  const drop = ry * 0.8;
-  return bulbs.map((b) => ({ cx: b.x, cy: b.y + drop, rx, ry, color: b.color }));
-}
-
-/**
- * Where the lights' glow may land: the area under each lit line, down to the bottom of
- * the picture, as polygons in pixels. Clipping the glow to this keeps the sky beside and
- * above the roofline dark. The sides are pulled in by `insetPx` (the eave overhang) so the
- * sky just past the walls stays dark too. Lines with fewer than 2 points are skipped.
- */
-export function underLinePolygons(lines: { points: { x: number; y: number }[] }[], width: number, height: number, insetPx = 0): string[] {
-  return lines.filter((l) => l.points.length >= 2).map((l) => {
-    const p = l.points.map((q) => ({ x: q.x * width, y: q.y * height }));
-    const first = p[0]; const last = p[p.length - 1];
-    const dir = Math.sign(last.x - first.x);
-    const inset = dir !== 0 && Math.abs(last.x - first.x) > insetPx * 4 ? insetPx * dir : 0;
-    const poly = [...p, { x: last.x - inset, y: last.y }, { x: last.x - inset, y: height }, { x: first.x + inset, y: height }, { x: first.x + inset, y: first.y }];
-    return poly.map((q) => `${q.x},${q.y}`).join(' ');
-  });
-}

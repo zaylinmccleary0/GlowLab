@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { EstimateOptions, InstallType, LineKind, Point, Preset, PricingSettings, Project, TracedLine } from '@glowlab/shared';
 import {
-  COOL_WHITE, INSTALL_TYPE_LABELS, PAINT_COLORS, bulbColorFor, bulbDrawSize, bulbPositions, nearestBulb, calibrationPixelsPerFoot, lightPools, underLinePolygons, computeEstimate, lineLengthsFeet, money,
+  COOL_WHITE, INSTALL_TYPE_LABELS, PAINT_COLORS, bulbColorFor, bulbDrawSize, bulbPositions, nearestBulb, calibrationPixelsPerFoot, computeEstimate, lineLengthsFeet, money,
   QUOTE_DISCLAIMER, normalizeEstimateOptions, polylineLengthFeet, profileFor, rateCardFor, totalFeet,
 } from '@glowlab/shared';
 import { api, type ProjectInput } from '../api';
@@ -69,7 +69,8 @@ export function HouseStage({ project, preset, spacingInches, installType, night,
   const colors = Array.from(new Set([...preset.bulbColors, ICICLE_COLOR, ...painted]));
   const gradId = (c: string) => `glow-${uid}-${colors.indexOf(c)}`;
   const glowOpacity = night ? 1 : 0.45;
-  // Night: the photo is darkened to dusk with a blue sky tint; the bulbs then light the house back up (see pools).
+  // Night: the photo is darkened to dusk with a blue sky tint, and each bulb throws a faint
+  // wide pool of light around it so the lights read as the brightest thing in the scene.
   const photoFilter = night ? 'brightness(.42) contrast(1.08) saturate(.8)' : 'none';
 
   const handleClick = (e: React.MouseEvent) => {
@@ -80,11 +81,6 @@ export function HouseStage({ project, preset, spacingInches, installType, night,
   const pts = (line: TracedLine) => line.points.map((p) => `${p.x * W},${p.y * H}`).join(' ');
   const litLines = sz ? project.lines.filter((l) => preset.appliesTo.includes(l.kind)) : [];
   const bulbsByLine = new Map(litLines.map((l) => [l.id, bulbPositions(l, project.calibration, imageSize, spacingInches)]));
-  // Night: a full-brightness copy of the house shows through wherever the bulbs' light lands,
-  // so the siding and roof under the lights glow while the sky stays dark.
-  const pools = night && ppf
-    ? lightPools(litLines.flatMap((l) => (bulbsByLine.get(l.id) ?? []).map((b) => ({ x: b.point.x * W, y: b.point.y * H, color: bulbColorFor(preset, l, b.index) }))), ppf, W)
-    : [];
 
   return (
     <div ref={ref} className="stage" style={{ aspectRatio: `${W} / ${H}` }} onClick={handleClick}>
@@ -101,40 +97,7 @@ export function HouseStage({ project, preset, spacingInches, installType, night,
               <stop offset="100%" stopColor={c} stopOpacity={0} />
             </radialGradient>
           ))}
-          {pools.length > 0 && (
-            <>
-              <radialGradient id={`pool-${uid}`}>
-                <stop offset="0%" stopColor="#fff" stopOpacity={0.7} />
-                <stop offset="55%" stopColor="#fff" stopOpacity={0.35} />
-                <stop offset="100%" stopColor="#fff" stopOpacity={0} />
-              </radialGradient>
-              {colors.map((c) => (
-                <radialGradient key={`w-${c}`} id={`wash-${uid}-${colors.indexOf(c)}`}>
-                  <stop offset="0%" stopColor={c} stopOpacity={0.5} />
-                  <stop offset="100%" stopColor={c} stopOpacity={0} />
-                </radialGradient>
-              ))}
-              <clipPath id={`under-${uid}`} clipPathUnits="userSpaceOnUse">
-                {underLinePolygons(litLines, W, H, (ppf ?? 0) * 1.5).map((poly, i) => <polygon key={i} points={poly} />)}
-              </clipPath>
-              <mask id={`lit-${uid}`} maskUnits="userSpaceOnUse" x={0} y={0} width={W} height={H}>
-                {pools.map((p, i) => <ellipse key={i} cx={p.cx} cy={p.cy} rx={p.rx} ry={p.ry} fill={`url(#pool-${uid})`} />)}
-              </mask>
-            </>
-          )}
         </defs>
-        {pools.length > 0 && (
-          <g aria-hidden="true" clipPath={`url(#under-${uid})`}>
-            <g mask={`url(#lit-${uid})`} style={{ filter: 'brightness(.95) saturate(1.1) sepia(.18)' }}>
-              {project.photoDataUrl
-                ? <image href={project.photoDataUrl} x={0} y={0} width={W} height={H} preserveAspectRatio="none" />
-                : <svg x={0} y={0} width={W} height={H} viewBox="0 0 1000 600" preserveAspectRatio="none"><DemoHouseShapes /></svg>}
-            </g>
-            <g style={{ mixBlendMode: 'screen' }} opacity={0.3}>
-              {pools.map((p, i) => <ellipse key={i} cx={p.cx} cy={p.cy} rx={p.rx} ry={p.ry} fill={`url(#wash-${uid}-${colors.indexOf(p.color)})`} />)}
-            </g>
-          </g>
-        )}
         {/* Tracing guides (dashed lines, pink calibration) only while designing, never on the quote. */}
         {interactive && project.lines.map((line) => (
           <polyline key={`trace-${line.id}`} fill="none" stroke="rgba(255,255,255,.35)" strokeWidth={W * 0.002} strokeDasharray="6 6" points={pts(line)} />
