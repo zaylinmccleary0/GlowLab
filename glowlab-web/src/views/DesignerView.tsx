@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { EstimateOptions, InstallType, LineKind, Point, Preset, PricingSettings, Project, TracedLine } from '@glowlab/shared';
 import {
@@ -9,6 +9,19 @@ import { api, type ProjectInput } from '../api';
 import NumberField from '../NumberField';
 
 const ICICLE_COLOR = COOL_WHITE;
+
+/** Small JPEG copy of a photo for the project list (~400px wide, usually 15–40 KB). */
+function makeThumb(img: HTMLImageElement): string | null {
+  const MAX = 400;
+  const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.65);
+}
 
 const KINDS: LineKind[] = ['roofline', 'ridge', 'gutter', 'window', 'door', 'pathway', 'tree', 'outline'];
 let uid = 0;
@@ -134,7 +147,11 @@ export function HouseStage({ project, preset, spacingInches, installType, night,
 export default function DesignerView({ initial, presets, settings, onBack }: {
   initial: Project; presets: Preset[]; settings: PricingSettings; onBack: () => void;
 }) {
-  const [project, setProject] = useState<Project>(initial);
+  const [project, setProjectState] = useState<Project>(initial);
+  // Unsaved changes: every edit goes through setProject, which marks the project dirty;
+  // going back to Projects saves first so nothing (like a new photo) is lost.
+  const [dirty, setDirty] = useState(false);
+  const setProject = (p: Project | ((prev: Project) => Project)) => { setProjectState(p); setDirty(true); };
   const [mode, setMode] = useState<'trace' | 'calibrate'>('trace');
   const [kind, setKind] = useState<LineKind>('roofline');
   const [current, setCurrent] = useState<Point[]>([]);
@@ -201,7 +218,7 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
         if (!ctx) { setError('Could not process that photo.'); return; }
         ctx.drawImage(img, 0, 0, w, h);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-        setProject({ ...project, photoDataUrl: dataUrl, imageWidth: w, imageHeight: h, calibration: null, lines: [] });
+        setProject({ ...project, photoDataUrl: dataUrl, thumbDataUrl: makeThumb(img), imageWidth: w, imageHeight: h, calibration: null, lines: [] });
       };
       img.onerror = () => setError('Could not read that photo.');
       img.src = String(reader.result);
@@ -209,18 +226,37 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
     reader.readAsDataURL(file);
   };
 
-  const useDemo = () => setProject({ ...project, photoDataUrl: null, imageWidth: 1000, imageHeight: 600, calibration: null, lines: [] });
+  const useDemo = () => setProject({ ...project, photoDataUrl: null, thumbDataUrl: null, imageWidth: 1000, imageHeight: 600, calibration: null, lines: [] });
 
-  const save = async () => {
+  // Projects saved before previews existed: make the preview now; it's saved with the next save.
+  useEffect(() => {
+    if (!initial.photoDataUrl || initial.thumbDataUrl) return;
+    const img = new Image();
+    img.onload = () => {
+      const thumb = makeThumb(img);
+      if (thumb) setProject((p) => (p.photoDataUrl === initial.photoDataUrl ? { ...p, thumbDataUrl: thumb } : p));
+    };
+    img.src = initial.photoDataUrl;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const save = async (): Promise<boolean> => {
     try {
       const input: ProjectInput = {
         clientName: project.clientName, address: project.address, photoDataUrl: project.photoDataUrl,
+        thumbDataUrl: project.thumbDataUrl ?? null,
         imageWidth: project.imageWidth, imageHeight: project.imageHeight, calibration: project.calibration,
         lines: project.lines, presetId: project.presetId, estimateOptions: project.estimateOptions,
       };
       const { project: savedProject } = await api.updateProject(project.id, input);
-      setProject(savedProject); setSaved(true); setTimeout(() => setSaved(false), 2000);
-    } catch (err) { setError((err as Error).message); }
+      setProjectState(savedProject); setDirty(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
+      return true;
+    } catch (err) { setError((err as Error).message); return false; }
+  };
+
+  const goBack = async () => {
+    if (dirty && !(await save()) && !window.confirm('Your changes could not be saved. Leave anyway and lose them?')) return;
+    onBack();
   };
 
   const previewProject: Project = { ...project, lines: current.length ? [...project.lines, { id: 'current', kind, points: current }] : project.lines };
@@ -228,10 +264,10 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
   return (
     <div>
       <div className="toolbar no-print">
-        <button onClick={onBack}>← Projects</button>
+        <button onClick={goBack} title={dirty ? 'Saves your changes, then goes back' : undefined}>← Projects</button>
         <input className="inline-input" value={project.clientName} onChange={(e) => setProject({ ...project, clientName: e.target.value })} aria-label="Client name" />
         <input className="inline-input wide" value={project.address} onChange={(e) => setProject({ ...project, address: e.target.value })} placeholder="Address" aria-label="Address" />
-        <button className="primary" onClick={save}>{saved ? 'Saved ✓' : 'Save project'}</button>
+        <button className="primary" onClick={() => { void save(); }}>{saved ? 'Saved ✓' : dirty ? 'Save project •' : 'Save project'}</button>
         <button onClick={() => setShowQuote(!showQuote)}>{showQuote ? 'Hide quote' : 'Quote view'}</button>
       </div>
       {error && <p className="error">{error}</p>}

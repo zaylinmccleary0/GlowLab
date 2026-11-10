@@ -49,7 +49,7 @@ export const api = {
 
 export function projectInput(p: Project): ProjectInput {
   return {
-    clientName: p.clientName, address: p.address, photoDataUrl: p.photoDataUrl,
+    clientName: p.clientName, address: p.address, photoDataUrl: p.photoDataUrl, thumbDataUrl: p.thumbDataUrl ?? null,
     imageWidth: p.imageWidth, imageHeight: p.imageHeight, calibration: p.calibration,
     lines: p.lines, presetId: p.presetId, estimateOptions: p.estimateOptions,
   };

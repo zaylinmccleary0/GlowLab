@@ -39,6 +39,16 @@ button.chip.active { background: var(--gold); color: #231a05; border-color: var(
 .card-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
 .card-title { font-weight: 700; font-size: 15px; }
 .badge { background: var(--pine); color: #dff5e3; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; text-transform: capitalize; width: fit-content; }
+.badge.alt { background: #3b3320; color: var(--gold); }
+.project-card { padding: 10px 10px 14px; }
+.card-preview { cursor: pointer; border-radius: 10px; overflow: hidden; }
+.card-preview .stage { border-radius: 10px; cursor: pointer; }
+.card-preview-empty { aspect-ratio: 5 / 3; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; background: #12160f; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); font-size: 13px; }
+.card-lines { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.card-lines li { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px dashed var(--line); }
+.card-lines li span:first-child { text-transform: capitalize; }
+.card-total { display: flex; justify-content: space-between; align-items: baseline; }
+.card-total strong { font-size: 18px; color: var(--gold); }
 .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin: 0 2px; vertical-align: middle; border: 1px solid #ffffff55; }
 /* designer */
 .designer-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }

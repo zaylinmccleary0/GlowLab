@@ -1,12 +1,10 @@
-import { useState } from 'react';
-import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import type { GestureResponderEvent } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import Svg, { Circle, Defs, Ellipse, G, Line, Polyline, RadialGradient, Stop } from 'react-native-svg';
+import * as ImageManipulator from 'expo-image-manipulator';
 import type { LineKind, Point } from '@glowlab/shared';
-import {
-  bulbDrawSize, bulbPositions, calibrationPixelsPerFoot, lineLengthsFeet, normalizeEstimateOptions, polylineLengthFeet, profileFor, totalFeet,
-} from '@glowlab/shared';
+import { lineLengthsFeet, normalizeEstimateOptions, polylineLengthFeet, profileFor, totalFeet } from '@glowlab/shared';
+import Stage from '../Stage';
 import { useWorkspace } from '../workspace';
 import { colors, styles } from '../theme';
 
@@ -27,9 +25,19 @@ export default function DesignerScreen() {
   const [currentPts, setCurrentPts] = useState<Point[]>([]);
   const [calPts, setCalPts] = useState<Point[]>([]);
   const [night, setNight] = useState(true);
-  const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Projects saved before previews existed: make the list preview from the photo; it's saved with the next save.
+  const needsThumb = Boolean(current?.photoDataUrl && !current.thumbDataUrl);
+  useEffect(() => {
+    if (!needsThumb || !current?.photoDataUrl) return;
+    const photo = current.photoDataUrl;
+    ImageManipulator.manipulateAsync(photo, [{ resize: { width: 400 } }], { compress: 0.65, format: ImageManipulator.SaveFormat.JPEG, base64: true })
+      .then((t) => { if (t.base64 && current.photoDataUrl === photo) updateCurrent({ ...current, thumbDataUrl: `data:image/jpeg;base64,${t.base64}` }); })
+      .catch(() => undefined); // no preview is fine; the card shows a placeholder
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id, needsThumb]);
 
   if (!current) {
     return <View style={[styles.screen, { padding: 20 }]}><Text style={styles.muted}>Pick or create a project on the Projects tab first.</Text></View>;
@@ -41,17 +49,8 @@ export default function DesignerScreen() {
   const feet = preset ? totalFeet(project, preset) : 0;
   const opts = normalizeEstimateOptions(project.estimateOptions);
   const spacingInches = profileFor(settings, opts).bulbSpacingInches;
-  const permanent = opts.installType === 'permanent';
-  // Bulbs are sized in real inches from the calibration (image pixels), then scaled to the on-screen stage.
-  const ppf = calibrationPixelsPerFoot(project.calibration, size);
-  const toScreen = stageSize.w / Math.max(1, project.imageWidth);
-  const sz = ppf ? bulbDrawSize(ppf, project.imageWidth, opts.installType) : null;
-  const colorsUsed = preset ? Array.from(new Set(preset.bulbColors)) : [];
 
-  const onTap = (e: GestureResponderEvent) => {
-    const { locationX, locationY } = e.nativeEvent;
-    if (!stageSize.w || !stageSize.h) return;
-    const p: Point = { x: Math.min(1, Math.max(0, locationX / stageSize.w)), y: Math.min(1, Math.max(0, locationY / stageSize.h)) };
+  const onTap = (p: Point) => {
     if (mode === 'calibrate') {
       const pts = [...calPts, p].slice(-2);
       setCalPts(pts);
@@ -73,18 +72,24 @@ export default function DesignerScreen() {
   const pickPhoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { setError('Photo library permission was not granted.'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.35, base64: true });
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
-    // The API (Vercel) rejects requests over 4.5 MB; leave headroom for the rest of the project.
-    if (asset.base64 && asset.base64.length > 3_500_000) { setError('That photo is too large. Try a smaller one or a screenshot of it.'); return; }
-    const w = asset.width || Math.round(stageSize.w) || 1000;
-    const h = asset.height || Math.round(stageSize.h) || 600;
-    updateCurrent({
-      ...project,
-      photoDataUrl: asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri,
-      imageWidth: w, imageHeight: h, calibration: null, lines: [],
-    });
+    try {
+      // Full photo: at most 1600px wide (the API, on Vercel, rejects requests over 4.5 MB).
+      // Preview: ~400px wide, shown on the project list.
+      const wide = (asset.width || 0) >= (asset.height || 0);
+      const fit = (max: number) => (wide ? { width: Math.min(max, asset.width || max) } : { height: Math.min(max, asset.height || max) });
+      const photo = await ImageManipulator.manipulateAsync(asset.uri, [{ resize: fit(1600) }], { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true });
+      const thumb = await ImageManipulator.manipulateAsync(asset.uri, [{ resize: fit(400) }], { compress: 0.65, format: ImageManipulator.SaveFormat.JPEG, base64: true });
+      if (!photo.base64 || photo.base64.length > 3_500_000) { setError('That photo is too large. Try a smaller one.'); return; }
+      updateCurrent({
+        ...project,
+        photoDataUrl: `data:image/jpeg;base64,${photo.base64}`,
+        thumbDataUrl: thumb.base64 ? `data:image/jpeg;base64,${thumb.base64}` : null,
+        imageWidth: photo.width, imageHeight: photo.height, calibration: null, lines: [],
+      });
+    } catch (e) { setError(`Could not process that photo: ${(e as Error).message}`); }
   };
 
   const save = async () => {
@@ -92,8 +97,6 @@ export default function DesignerScreen() {
     catch (e) { setError((e as Error).message); }
   };
 
-  const aspect = project.imageWidth / Math.max(1, project.imageHeight);
-  const allLines = currentPts.length ? [...project.lines, { id: 'cur', kind, points: currentPts }] : project.lines;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -109,71 +112,10 @@ export default function DesignerScreen() {
         <TouchableOpacity style={styles.button} onPress={save}><Text style={styles.buttonText}>{saved ? 'Saved ✓' : 'Save'}</Text></TouchableOpacity>
       </View>
 
-      <View
-        style={{ width: '100%', aspectRatio: aspect, backgroundColor: '#000', borderRadius: 12, overflow: 'hidden', opacity: night ? 0.92 : 1 }}
-        onLayout={(e) => setStageSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
-        onTouchEnd={onTap}
-      >
-        {project.photoDataUrl ? (
-          <Image source={{ uri: project.photoDataUrl }} style={{ position: 'absolute', width: '100%', height: '100%', opacity: night ? 0.6 : 1 }} resizeMode="cover" />
-        ) : (
-          <View style={{ position: 'absolute', width: '100%', height: '100%', backgroundColor: '#2b3a55', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ color: '#dfe8ff', fontWeight: '700' }}>Demo House (no photo yet)</Text>
-          </View>
-        )}
-        {stageSize.w > 0 && preset && (
-          <Svg width={stageSize.w} height={stageSize.h} style={{ position: 'absolute' }}>
-            {allLines.map((line) => (
-              <Polyline key={`t-${line.id}`} fill="none" stroke="rgba(255,255,255,.4)" strokeWidth={1.5} strokeDasharray="5 5"
-                points={line.points.map((p) => `${p.x * stageSize.w},${p.y * stageSize.h}`).join(' ')} />
-            ))}
-            {project.calibration && (
-              <Line x1={project.calibration.a.x * stageSize.w} y1={project.calibration.a.y * stageSize.h}
-                x2={project.calibration.b.x * stageSize.w} y2={project.calibration.b.y * stageSize.h} stroke="#ff4fd8" strokeWidth={2} />
-            )}
-            <Defs>
-              {colorsUsed.map((c, i) => (
-                <RadialGradient key={c} id={`glow${i}`}>
-                  <Stop offset="0%" stopColor={c} stopOpacity={0.85} />
-                  <Stop offset="30%" stopColor={c} stopOpacity={0.35} />
-                  <Stop offset="100%" stopColor={c} stopOpacity={0} />
-                </RadialGradient>
-              ))}
-            </Defs>
-            {sz && project.lines.filter((l) => preset.appliesTo.includes(l.kind)).map((line) => (
-              <G key={`lights-${line.id}`}>
-                <Polyline fill="none" points={line.points.map((p) => `${p.x * stageSize.w},${p.y * stageSize.h}`).join(' ')}
-                  stroke={permanent ? '#3a3a3a' : '#1d3b22'} strokeWidth={Math.max(0.6, sz.wire * toScreen)} strokeLinecap="round" strokeLinejoin="round" opacity={night ? 0.6 : 0.9} />
-                {bulbPositions(line, project.calibration, size, spacingInches).map((b) => {
-                  const color = preset.bulbColors[b.index % preset.bulbColors.length];
-                  const glow = `url(#glow${colorsUsed.indexOf(color)})`;
-                  const x = b.point.x * stageSize.w; const y = b.point.y * stageSize.h;
-                  const rx = Math.max(1, sz.rx * toScreen); const ry = Math.max(1, sz.ry * toScreen); const gr = sz.glowR * toScreen;
-                  if (permanent) {
-                    return (
-                      <G key={b.index}>
-                        <Circle cx={x} cy={y} r={gr} fill={glow} opacity={night ? 1 : 0.45} />
-                        <Circle cx={x} cy={y} r={rx} fill={color} />
-                      </G>
-                    );
-                  }
-                  const a = (b.angleDeg * Math.PI) / 180;
-                  let nx = Math.sin(a); let ny = -Math.cos(a);
-                  if (ny > 0) { nx = -nx; ny = -ny; }
-                  const cx = x + nx * ry; const cy = y + ny * ry;
-                  const rot = (Math.atan2(ny, nx) * 180) / Math.PI + 90;
-                  return (
-                    <G key={b.index}>
-                      <Circle cx={cx} cy={cy} r={gr} fill={glow} opacity={night ? 1 : 0.45} />
-                      <Ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill={color} rotation={rot} origin={`${cx}, ${cy}`} />
-                    </G>
-                  );
-                })}
-              </G>
-            ))}
-          </Svg>
-        )}
-      </View>
+      {preset && (
+        <Stage project={project} preset={preset} spacingInches={spacingInches} installType={opts.installType} night={night}
+          guides extraLines={currentPts.length ? [{ id: 'cur', kind, points: currentPts }] : undefined} onTap={onTap} />
+      )}
       <Text style={styles.muted}>Tap the photo to add points. Total for this preset: {feet.toFixed(1)} ft{currentPts.length ? ` • current line ${polylineLengthFeet(currentPts, project.calibration, size).toFixed(1)} ft` : ''}</Text>
 
       <View style={styles.row}>

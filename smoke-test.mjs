@@ -87,6 +87,23 @@ check('premium bulb count', e2.bulbCount, 50);
 const { estimate: e3 } = await req(`/api/projects/${project.id}/estimate`, { method: 'POST', token, body: { options: { ...project.estimateOptions, ratePerFoot: 9 } } });
 check('custom rate total', e3.total, 450);
 
+// 5b. photos: the list carries the small preview + hasPhoto, not the full photo
+const PHOTO = 'data:image/jpeg;base64,RlVMTFBIT1RP';
+const THUMB = 'data:image/jpeg;base64,VEhVTUI=';
+const { project: withPhoto } = await req('/api/projects', { method: 'POST', token, body: { ...project, clientName: 'Photo House', photoDataUrl: PHOTO, thumbDataUrl: THUMB } });
+const listed = (await req('/api/projects', { token })).projects.find((p) => p.id === withPhoto.id);
+check('list leaves the full photo out', listed.photoDataUrl, null);
+check('list includes the preview', listed.thumbDataUrl, THUMB);
+check('list says it has a photo', listed.hasPhoto, true);
+check('opening returns the full photo', (await req(`/api/projects/${withPhoto.id}`, { token })).project.photoDataUrl, PHOTO);
+const renamed = (await req(`/api/projects/${withPhoto.id}`, { method: 'PUT', token, body: { clientName: 'Photo House 2' } })).project;
+check('saving without photo fields keeps the photo', [renamed.photoDataUrl, renamed.thumbDataUrl], [PHOTO, THUMB]);
+const swapped = (await req(`/api/projects/${withPhoto.id}`, { method: 'PUT', token, body: { photoDataUrl: 'data:image/jpeg;base64,TkVX' } })).project;
+check('a new photo without a new preview clears the old preview', swapped.thumbDataUrl, null);
+const cleared = (await req(`/api/projects/${withPhoto.id}`, { method: 'PUT', token, body: { photoDataUrl: null } })).project;
+check('photo can be removed', [cleared.photoDataUrl, cleared.hasPhoto], [null, false]);
+await req(`/api/projects/${withPhoto.id}`, { method: 'DELETE', token });
+
 // 6. bad preset is rejected
 let rejected = false;
 try {

@@ -14,6 +14,10 @@ interface Workspace {
   updateCurrent: (p: Project) => void;
   reload: () => Promise<void>;
   saveCurrent: () => Promise<void>;
+  /** True when the open project has changes that aren't saved yet. */
+  dirty: boolean;
+  /** Saves the open project if it has unsaved changes. */
+  saveIfDirty: () => Promise<void>;
   refreshSettings: () => Promise<void>;
 }
 
@@ -25,6 +29,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [settings, setSettings] = useState<PricingSettings>(DEFAULT_PRICING);
   const [current, setCurrentState] = useState<Project | null>(null);
+  const [dirty, setDirty] = useState(false);
 
   const reload = useCallback(async () => {
     if (!user) return;
@@ -39,16 +44,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setSettings(s);
   }, []);
 
-  const setCurrent = (p: Project | null) => setCurrentState(p);
-  const updateCurrent = (p: Project) => setCurrentState(p);
+  const setCurrent = (p: Project | null) => { setCurrentState(p); setDirty(false); };
+  const updateCurrent = (p: Project) => { setCurrentState(p); setDirty(true); };
   const saveCurrent = async () => {
     if (!current) return;
     const { project } = await api.updateProject(current.id, projectInput(current));
-    setCurrentState(project);
+    setCurrentState(project); setDirty(false);
     setProjects((prev) => prev.map((x) => (x.id === project.id ? project : x)));
   };
+  const saveIfDirty = async () => { if (dirty) await saveCurrent(); };
 
-  return <Ctx.Provider value={{ projects, presets, settings, current, setCurrent, updateCurrent, reload, saveCurrent, refreshSettings }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ projects, presets, settings, current, setCurrent, updateCurrent, reload, saveCurrent, refreshSettings, dirty, saveIfDirty }}>{children}</Ctx.Provider>;
 }
 
 export function useWorkspace(): Workspace {

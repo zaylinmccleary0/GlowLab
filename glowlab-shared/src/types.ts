@@ -44,6 +44,10 @@ export interface EstimateBreakdown {
 export interface Project {
   id: string; clientName: string; address: string;
   photoDataUrl: string | null; imageWidth: number; imageHeight: number;
+  /** Small copy of the photo (a few hundred px wide) shown on the project list. */
+  thumbDataUrl?: string | null;
+  /** Set on list results, where photoDataUrl is left out: whether the project has a photo. */
+  hasPhoto?: boolean;
   calibration: Calibration | null; lines: TracedLine[]; presetId: string;
   estimateOptions: EstimateOptions; createdAt: string; updatedAt: string;
 }

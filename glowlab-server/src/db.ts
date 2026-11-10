@@ -12,7 +12,7 @@ export interface DbUser { id: string; name: string; email: string; password_hash
 
 interface DbProject {
   id: string; user_id: string; client_name: string; address: string;
-  photo_data_url: string | null; image_width: number; image_height: number;
+  photo_data_url: string | null; thumb_data_url: string | null; has_photo?: number; image_width: number; image_height: number;
   calibration_json: string | null; lines_json: string; preset_id: string;
   estimate_options_json: string; created_at: string; updated_at: string;
 }
@@ -33,7 +33,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
   client_name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '',
-  photo_data_url TEXT, image_width INTEGER NOT NULL DEFAULT 1000, image_height INTEGER NOT NULL DEFAULT 1000,
+  photo_data_url TEXT, thumb_data_url TEXT, image_width INTEGER NOT NULL DEFAULT 1000, image_height INTEGER NOT NULL DEFAULT 1000,
   calibration_json TEXT, lines_json TEXT NOT NULL DEFAULT '[]',
   preset_id TEXT NOT NULL DEFAULT 'classic-warm-white',
   estimate_options_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -48,6 +48,10 @@ async function migrate(db: Client): Promise<void> {
   const cols = await db.execute('PRAGMA table_info(settings)');
   if (!cols.rows.some((r) => r.name === 'profiles_json')) {
     await db.execute('ALTER TABLE settings ADD COLUMN profiles_json TEXT');
+  }
+  const pcols = await db.execute('PRAGMA table_info(projects)');
+  if (!pcols.rows.some((r) => r.name === 'thumb_data_url')) {
+    await db.execute('ALTER TABLE projects ADD COLUMN thumb_data_url TEXT');
   }
 }
 let ready: Promise<Client> | null = null;
@@ -152,7 +156,9 @@ export async function saveSettings(userId: string, s: PricingSettings): Promise<
 function toProject(row: DbProject): Project {
   return {
     id: row.id, clientName: row.client_name, address: row.address,
-    photoDataUrl: row.photo_data_url ?? null, imageWidth: Number(row.image_width), imageHeight: Number(row.image_height),
+    photoDataUrl: row.photo_data_url ?? null, thumbDataUrl: row.thumb_data_url ?? null,
+    hasPhoto: row.has_photo !== undefined && row.has_photo !== null ? Number(row.has_photo) === 1 : Boolean(row.photo_data_url),
+    imageWidth: Number(row.image_width), imageHeight: Number(row.image_height),
     calibration: row.calibration_json ? (JSON.parse(row.calibration_json) as Calibration) : null,
     lines: JSON.parse(row.lines_json) as TracedLine[],
     presetId: row.preset_id,
@@ -161,12 +167,13 @@ function toProject(row: DbProject): Project {
   };
 }
 /**
- * The list leaves photos out (photoDataUrl is null) so the response stays small:
- * Vercel caps function responses at 4.5 MB. Fetch one project to get its photo.
+ * The list leaves full photos out (photoDataUrl is null) so the response stays small:
+ * Vercel caps function responses at 4.5 MB. It includes the small preview (thumbDataUrl)
+ * and hasPhoto. Fetch one project to get its full photo.
  */
 export async function listProjects(userId: string): Promise<Project[]> {
   const rows = await all<DbProject>(
-    `SELECT id, user_id, client_name, address, NULL AS photo_data_url, image_width, image_height, calibration_json,
+    `SELECT id, user_id, client_name, address, NULL AS photo_data_url, thumb_data_url, (photo_data_url IS NOT NULL) AS has_photo, image_width, image_height, calibration_json,
       lines_json, preset_id, estimate_options_json, created_at, updated_at
      FROM projects WHERE user_id = ? ORDER BY updated_at DESC`, [userId]);
   return rows.map(toProject);
@@ -176,27 +183,27 @@ export async function getProject(userId: string, id: string): Promise<Project | 
   return row ? toProject(row) : undefined;
 }
 export interface ProjectInput {
-  clientName: string; address: string; photoDataUrl: string | null; imageWidth: number; imageHeight: number;
+  clientName: string; address: string; photoDataUrl: string | null; thumbDataUrl: string | null; imageWidth: number; imageHeight: number;
   calibration: Calibration | null; lines: TracedLine[]; presetId: string; estimateOptions: EstimateOptions;
 }
 export async function insertProject(userId: string, input: ProjectInput): Promise<Project> {
   const now = nowIso();
   const row: DbProject = {
     id: newId(), user_id: userId, client_name: input.clientName, address: input.address,
-    photo_data_url: input.photoDataUrl, image_width: input.imageWidth, image_height: input.imageHeight,
+    photo_data_url: input.photoDataUrl, thumb_data_url: input.thumbDataUrl, image_width: input.imageWidth, image_height: input.imageHeight,
     calibration_json: input.calibration ? JSON.stringify(input.calibration) : null,
     lines_json: JSON.stringify(input.lines), preset_id: input.presetId,
     estimate_options_json: JSON.stringify(input.estimateOptions), created_at: now, updated_at: now,
   };
-  await run(`INSERT INTO projects (id, user_id, client_name, address, photo_data_url, image_width, image_height, calibration_json, lines_json, preset_id, estimate_options_json, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  [row.id, row.user_id, row.client_name, row.address, row.photo_data_url, row.image_width, row.image_height, row.calibration_json, row.lines_json, row.preset_id, row.estimate_options_json, row.created_at, row.updated_at]);
+  await run(`INSERT INTO projects (id, user_id, client_name, address, photo_data_url, thumb_data_url, image_width, image_height, calibration_json, lines_json, preset_id, estimate_options_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [row.id, row.user_id, row.client_name, row.address, row.photo_data_url, row.thumb_data_url, row.image_width, row.image_height, row.calibration_json, row.lines_json, row.preset_id, row.estimate_options_json, row.created_at, row.updated_at]);
   return toProject(row);
 }
 export async function updateProject(userId: string, id: string, input: ProjectInput): Promise<Project | undefined> {
-  const changes = await run(`UPDATE projects SET client_name=?, address=?, photo_data_url=?, image_width=?, image_height=?,
+  const changes = await run(`UPDATE projects SET client_name=?, address=?, photo_data_url=?, thumb_data_url=?, image_width=?, image_height=?,
     calibration_json=?, lines_json=?, preset_id=?, estimate_options_json=?, updated_at=? WHERE id=? AND user_id=?`,
-  [input.clientName, input.address, input.photoDataUrl, input.imageWidth, input.imageHeight,
+  [input.clientName, input.address, input.photoDataUrl, input.thumbDataUrl, input.imageWidth, input.imageHeight,
     input.calibration ? JSON.stringify(input.calibration) : null, JSON.stringify(input.lines), input.presetId,
     JSON.stringify(input.estimateOptions), nowIso(), id, userId]);
   return changes > 0 ? getProject(userId, id) : undefined;

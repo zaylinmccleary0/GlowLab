@@ -21,12 +21,21 @@ function parseInput(body: Record<string, unknown>, existing?: Project): { input?
   if (calibration !== null) {
     if (!calibration.a || !calibration.b || !(Number(calibration.realFeet) > 0)) return { error: 'calibration needs a, b and realFeet > 0' };
   }
+  // Photo fields: a key that's present (even null, to remove the photo) replaces the saved value;
+  // a missing key keeps it. A new photo without a new preview clears the stale preview.
+  const photoDataUrl = 'photoDataUrl' in body ? body.photoDataUrl : (existing?.photoDataUrl ?? null);
+  if (photoDataUrl !== null && (typeof photoDataUrl !== 'string' || !photoDataUrl.startsWith('data:image/'))) return { error: 'photoDataUrl must be an image data URL or null' };
+  const photoChanged = photoDataUrl !== (existing?.photoDataUrl ?? null);
+  const thumbDataUrl = 'thumbDataUrl' in body ? body.thumbDataUrl : (photoChanged ? null : (existing?.thumbDataUrl ?? null));
+  if (thumbDataUrl !== null && (typeof thumbDataUrl !== 'string' || !thumbDataUrl.startsWith('data:image/'))) return { error: 'thumbDataUrl must be an image data URL or null' };
+  if (typeof thumbDataUrl === 'string' && thumbDataUrl.length > 300_000) return { error: 'thumbDataUrl is too large (keep previews under ~200 KB)' };
+  if (photoDataUrl === null && thumbDataUrl !== null) return { error: 'A preview needs a photo' };
   const estimateOptions = normalizeEstimateOptions((body.estimateOptions as EstimateOptions) ?? existing?.estimateOptions ?? DEFAULT_ESTIMATE_OPTIONS);
   return {
     input: {
       clientName: clientName.trim(),
       address: typeof body.address === 'string' ? body.address : (existing?.address ?? ''),
-      photoDataUrl: (body.photoDataUrl as string | null) ?? existing?.photoDataUrl ?? null,
+      photoDataUrl, thumbDataUrl,
       imageWidth: Number(body.imageWidth) || existing?.imageWidth || 1000,
       imageHeight: Number(body.imageHeight) || existing?.imageHeight || 1000,
       calibration, lines, presetId, estimateOptions,
