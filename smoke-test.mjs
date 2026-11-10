@@ -39,7 +39,7 @@ check('preset ids', presets.map((p) => p.id), ['classic-warm-white', 'full-roofl
 check('candy cane pattern', presets.find((p) => p.id === 'candy-cane').bulbColors, ['#FF2D2D', '#FFD9A0']);
 
 // 3. settings: one default "Standard" price list on register, then PUT round-trips
-const card = (rate, steep, timer) => ({ ratePerFoot: rate, secondStoryMultiplier: 1.25, steepRoofFee: steep, wreathPrice: 85, pathwayStakePrice: 18, treeWrapPrice: 120, timerPrice: timer });
+const card = (rate, steep, timer) => ({ ratePerFoot: rate, secondStoryMultiplier: 1.25, steepRoofFee: steep, wreathPrice: 85, pathwayStakePrice: 18, treeWrapPrice: 120, timerPrice: timer, takedownReinstallFee: 0 });
 const DEFAULTS = { profiles: [{ id: 'standard', name: 'Standard', bulbSpacingInches: 15, seasonal: card(7.5, 150, 45), permanent: card(25, 250, 0) }] };
 const s0 = await req('/api/settings', { token });
 check('default pricing on register', s0.settings, DEFAULTS);
@@ -71,18 +71,18 @@ const list = await req('/api/projects', { token });
 check('project list count', list.projects.length, 1);
 
 // 5. estimate, hand-computed with the default "Standard" list (seasonal $7.50/ft, bulbs every 15"):
-//    50 ft x $7.50/ft = $375.00 ; bulbs = ceil(50 x 12 / 15) = 40 ; deposit 50% = $187.50
+//    50 ft x $7.50/ft = $375.00 ; bulbs = 40 gaps of 15" + the end bulb = 41 ; deposit 50% = $187.50
 const { estimate } = await req(`/api/projects/${project.id}/estimate`, { method: 'POST', token, body: {} });
 check('estimate totalFeet', estimate.totalFeet, 50);
-check('estimate bulbCount', estimate.bulbCount, 40);
-check('estimate clipCount', estimate.clipCount, 40);
+check('estimate bulbCount', estimate.bulbCount, 41);
+check('estimate clipCount', estimate.clipCount, 41);
 check('estimate total', estimate.total, 375);
 check('estimate depositDue', estimate.depositDue, 187.5);
 check('estimate line amount', estimate.lines[0].amount, 375);
-// Permanent on the Premium list: 50 x $30 = $1,500 ; 12" spacing => 50 bulbs
+// Permanent on the Premium list: 50 x $30 = $1,500 ; 12" spacing => 50 gaps + the end bulb = 51 bulbs
 const { estimate: e2 } = await req(`/api/projects/${project.id}/estimate`, { method: 'POST', token, body: { options: { ...project.estimateOptions, installType: 'permanent', pricingProfileId: 'premium' } } });
 check('premium permanent total', e2.total, 1500);
-check('premium bulb count', e2.bulbCount, 50);
+check('premium bulb count', e2.bulbCount, 51);
 // Custom rate for this job: 50 x $9 = $450
 const { estimate: e3 } = await req(`/api/projects/${project.id}/estimate`, { method: 'POST', token, body: { options: { ...project.estimateOptions, ratePerFoot: 9 } } });
 check('custom rate total', e3.total, 450);

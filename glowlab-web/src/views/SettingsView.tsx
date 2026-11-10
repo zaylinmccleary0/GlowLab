@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { InstallType, PricingProfile, PricingSettings, RateCard } from '@glowlab/shared';
-import { INSTALL_TYPE_LABELS, MAX_PRICING_PROFILES, RATE_CARD_FIELDS, newPricingProfile, validatePricingSettings } from '@glowlab/shared';
+import { INSTALL_TYPE_LABELS, MAX_PRICING_PROFILES, newPricingProfile, rateCardFields, validatePricingSettings } from '@glowlab/shared';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import NumberField from '../NumberField';
@@ -93,7 +93,7 @@ export default function SettingsView({ onSaved }: { onSaved: (s: PricingSettings
         <p className="muted small" style={{ marginTop: -4 }}>
           {type === 'seasonal' ? 'Seasonal: hung for the holidays, taken down after.' : 'Permanent: year-round LED track lighting.'} Editing {INSTALL_TYPE_LABELS[type].toLowerCase()} prices for “{active.name || 'Untitled'}”.
         </p>
-        {RATE_CARD_FIELDS.map(({ key, label, hint }) => (
+        {rateCardFields(type).map(({ key, label, hint }) => (
           <label key={`${active.id}-${type}-${key}`}>{label}
             <NumberField value={active[type][key]} onChange={(v) => setRate(key, v)} />
             {hint && <span className="muted small">{hint}</span>}

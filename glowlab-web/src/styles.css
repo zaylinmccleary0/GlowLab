@@ -76,6 +76,7 @@ div.stage-photo { object-fit: initial; }
 .quote .stage { cursor: default; }
 .quote .estimate-table td { border-top-color: #dde4de; }
 .quote .muted { color: #6b7670; }
+.quote-disclaimer { margin-top: 14px; padding-top: 10px; border-top: 1px solid #dde4de; font-size: 13px; color: #3d4741; }
 .settings .form { margin-bottom: 8px; }
 @media print {
   .no-print, header, button { display: none !important; }

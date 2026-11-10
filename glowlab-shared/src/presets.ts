@@ -82,10 +82,12 @@ export const DEFAULT_BULB_SPACING_INCHES = 15;
 export const DEFAULT_SEASONAL_RATES: RateCard = {
   ratePerFoot: 7.5, secondStoryMultiplier: 1.25, steepRoofFee: 150,
   wreathPrice: 85, pathwayStakePrice: 18, treeWrapPrice: 120, timerPrice: 45,
+  takedownReinstallFee: 0,
 };
 export const DEFAULT_PERMANENT_RATES: RateCard = {
   ratePerFoot: 25, secondStoryMultiplier: 1.25, steepRoofFee: 250,
   wreathPrice: 85, pathwayStakePrice: 18, treeWrapPrice: 120, timerPrice: 0,
+  takedownReinstallFee: 0,
 };
 
 /** A fresh price list with the default prices. */

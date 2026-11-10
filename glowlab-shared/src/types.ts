@@ -22,6 +22,8 @@ export type InstallType = 'seasonal' | 'permanent';
 export interface RateCard {
   ratePerFoot: number; secondStoryMultiplier: number; steepRoofFee: number;
   wreathPrice: number; pathwayStakePrice: number; treeWrapPrice: number; timerPrice: number;
+  /** Seasonal only: flat takedown / reinstall charge added to the quote (0 = not shown). Always 0 on permanent. */
+  takedownReinstallFee: number;
 }
 /** A saved, named price list: its own seasonal and permanent prices and bulb spacing. */
 export interface PricingProfile {

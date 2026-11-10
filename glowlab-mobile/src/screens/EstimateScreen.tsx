@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import type { EstimateOptions } from '@glowlab/shared';
-import { INSTALL_TYPE_LABELS, computeEstimate, money, normalizeEstimateOptions, profileFor, rateCardFor } from '@glowlab/shared';
+import { INSTALL_TYPE_LABELS, QUOTE_DISCLAIMER, computeEstimate, money, normalizeEstimateOptions, profileFor, rateCardFor } from '@glowlab/shared';
 import NumberInput from '../NumberInput';
 import { useWorkspace } from '../workspace';
 import { colors, styles } from '../theme';
@@ -91,6 +91,7 @@ export default function EstimateScreen() {
         ))}
         <Text style={styles.h2}>Total: {money(estimate.total)}</Text>
         <Text style={styles.muted}>Deposit due (50%): {money(estimate.depositDue)}</Text>
+        <Text style={[styles.muted, styles.small]}>Please note: {QUOTE_DISCLAIMER}</Text>
       </View>
       {error && <Text style={styles.error}>{error}</Text>}
       <TouchableOpacity style={styles.button} onPress={save}><Text style={styles.buttonText}>{saved ? 'Saved ✓' : 'Save project'}</Text></TouchableOpacity>

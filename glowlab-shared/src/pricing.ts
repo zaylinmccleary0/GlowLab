@@ -3,7 +3,7 @@ import type {
 } from './types';
 import { MAX_PRICING_PROFILES } from './types';
 import { DEFAULT_PRICING } from './presets';
-import { totalFeet } from './geometry';
+import { bulbCountForProject, totalFeet } from './geometry';
 
 export function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
 export function money(n: number): string { return `$${round2(n).toFixed(2)}`; }
@@ -11,7 +11,11 @@ export function money(n: number): string { return `$${round2(n).toFixed(2)}`; }
 export const INSTALL_TYPE_LABELS: Record<InstallType, string> = { seasonal: 'Seasonal', permanent: 'Permanent' };
 
 /** The fields of a rate card, in display order, with labels for settings screens. */
-export const RATE_CARD_FIELDS: { key: keyof RateCard; label: string; hint: string }[] = [
+/** Shown on quotes (web and phone). */
+export const QUOTE_DISCLAIMER = 'This price is an estimate. It is variable and subject to change throughout the project.';
+
+/** Price fields in Settings. `seasonalOnly` fields are hidden (and kept at 0) on the permanent side. */
+export const RATE_CARD_FIELDS: { key: keyof RateCard; label: string; hint: string; seasonalOnly?: boolean }[] = [
   { key: 'ratePerFoot', label: 'Price per linear foot ($)', hint: 'Charged on every traced foot this design lights' },
   { key: 'secondStoryMultiplier', label: 'Second-story multiplier', hint: 'e.g. 1.25 = 25% more per foot on 2-story homes' },
   { key: 'steepRoofFee', label: 'Steep roof fee ($, flat)', hint: 'Added once for steep / difficult roofs' },
@@ -19,7 +23,13 @@ export const RATE_CARD_FIELDS: { key: keyof RateCard; label: string; hint: strin
   { key: 'pathwayStakePrice', label: 'Pathway stake ($ each)', hint: '' },
   { key: 'treeWrapPrice', label: 'Tree wrap ($ each)', hint: '' },
   { key: 'timerPrice', label: 'Timer ($ each)', hint: '' },
+  { key: 'takedownReinstallFee', label: 'Takedown / reinstall ($, flat)', hint: 'Added as its own line on every seasonal quote. Leave at 0 to leave it off.', seasonalOnly: true },
 ];
+
+/** The Settings fields for one side of a price list. */
+export function rateCardFields(type: InstallType) {
+  return RATE_CARD_FIELDS.filter((f) => type === 'seasonal' || !f.seasonalOnly);
+}
 
 /** Fills in anything missing from saved/legacy estimate options (e.g. the old rental/purchase `model`). */
 export function normalizeEstimateOptions(raw: Partial<EstimateOptions> | null | undefined): EstimateOptions {
@@ -58,11 +68,6 @@ export function effectiveRatePerFoot(settings: PricingSettings, options: Estimat
   return options.ratePerFoot ?? rateCardFor(settings, options).ratePerFoot;
 }
 
-/** One bulb per spacing interval: ceil(feet x 12 / spacingInches). */
-export function bulbCountFor(feet: number, spacingInches: number): number {
-  return feet > 0 && spacingInches > 0 ? Math.ceil((feet * 12) / spacingInches - 1e-9) : 0;
-}
-
 /**
  * Checks pricing sent by a client. Returns the cleaned settings, or an error
  * message naming the first bad field.
@@ -86,7 +91,9 @@ export function validatePricingSettings(raw: unknown): { settings?: PricingSetti
     for (const type of ['seasonal', 'permanent'] as const) {
       const src = (p[type] ?? {}) as Record<string, unknown>;
       const card = {} as RateCard;
-      for (const { key, label } of RATE_CARD_FIELDS) {
+      for (const { key, label, seasonalOnly } of RATE_CARD_FIELDS) {
+        // Not on permanent; and price lists saved before this field existed start at 0.
+        if (seasonalOnly && (type !== 'seasonal' || src[key] === undefined)) { card[key] = 0; continue; }
         const v = Number(src[key]);
         if (src[key] === '' || src[key] === null || !Number.isFinite(v) || v < 0) {
           return { error: `${name} (${INSTALL_TYPE_LABELS[type]}): ${label} must be a number, 0 or more` };
@@ -118,7 +125,7 @@ export function computeEstimate(
   const card = rateCardFor(settings, options);
   const feetRaw = totalFeet(project, preset);
   const feet = round2(feetRaw);
-  const bulbCount = bulbCountFor(feetRaw, profile.bulbSpacingInches);
+  const bulbCount = bulbCountForProject(project, preset, profile.bulbSpacingInches);
   const lines: EstimateLine[] = [];
 
   const rate = effectiveRatePerFoot(settings, options);
@@ -126,7 +133,8 @@ export function computeEstimate(
   let perFoot = feetRaw * rate;
   const detail: string[] = [`${feet} ft × ${money(rate)}/ft`];
   if (options.ratePerFoot !== null) detail.push('custom rate');
-  detail.push(permanent ? 'permanent LED track, stays up year-round' : 'seasonal (install + takedown included)');
+  const takedown = permanent ? 0 : card.takedownReinstallFee;
+  detail.push(permanent ? 'permanent LED track, stays up year-round' : takedown > 0 ? 'seasonal install' : 'seasonal (install + takedown included)');
   if (options.stories === 2) { perFoot *= card.secondStoryMultiplier; detail.push(`2nd story ×${card.secondStoryMultiplier}`); }
   perFoot = round2(perFoot);
   const what = permanent ? 'LED' : preset.bulbSize;
@@ -139,6 +147,7 @@ export function computeEstimate(
   add(options.addOns.pathwayStakes, card.pathwayStakePrice, 'Pathway stake light');
   add(options.addOns.treeWraps, card.treeWrapPrice, 'Tree wrap');
   add(options.addOns.timers, card.timerPrice, 'Timer');
+  if (takedown > 0) lines.push({ label: 'Takedown / reinstall', detail: 'flat fee', amount: round2(takedown) });
   if (options.steepRoof) lines.push({ label: 'Steep / difficult roof fee', detail: 'flat fee', amount: round2(card.steepRoofFee) });
 
   const subtotal = round2(lines.reduce((s, l) => s + l.amount, 0));

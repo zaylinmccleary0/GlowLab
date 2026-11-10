@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Image, Text, View } from 'react-native';
 import type { GestureResponderEvent } from 'react-native';
-import Svg, { Circle, Defs, Ellipse, G, Line, Polyline, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, ClipPath, Defs, Ellipse, G, Image as SvgImage, Line, Mask, Polygon, Polyline, RadialGradient, Stop } from 'react-native-svg';
 import type { InstallType, Point, Preset, Project, TracedLine } from '@glowlab/shared';
-import { bulbColorFor, bulbDrawSize, bulbPositions, calibrationPixelsPerFoot } from '@glowlab/shared';
+import { bulbColorFor, bulbDrawSize, bulbPositions, calibrationPixelsPerFoot, lightPools, underLinePolygons } from '@glowlab/shared';
 
 let stageCount = 0;
 
@@ -29,6 +29,13 @@ export default function Stage({ project, preset, spacingInches, installType, nig
   const colorsUsed = Array.from(new Set([...preset.bulbColors, ...painted]));
   const photo = photoUri === undefined ? project.photoDataUrl : photoUri;
   const guideLines = extraLines?.length ? [...project.lines, ...extraLines] : project.lines;
+  const litLines = sz ? project.lines.filter((l) => preset.appliesTo.includes(l.kind)) : [];
+  const bulbsByLine = new Map(litLines.map((l) => [l.id, bulbPositions(l, project.calibration, size, spacingInches)]));
+  // Night: a full-brightness copy of the photo shows through where the bulbs' light lands,
+  // so the house under the lights glows while the sky stays dark.
+  const pools = night && ppf && photo && stageSize.w > 0
+    ? lightPools(litLines.flatMap((l) => (bulbsByLine.get(l.id) ?? []).map((b) => ({ x: b.point.x * stageSize.w, y: b.point.y * stageSize.h, color: bulbColorFor(preset, l, b.index) }))), ppf * toScreen, stageSize.w)
+    : [];
   const pts = (line: TracedLine) => line.points.map((p) => `${p.x * stageSize.w},${p.y * stageSize.h}`).join(' ');
 
   const handleTouch = (e: GestureResponderEvent) => {
@@ -61,7 +68,32 @@ export default function Stage({ project, preset, spacingInches, installType, nig
                 <Stop offset="100%" stopColor={c} stopOpacity={0} />
               </RadialGradient>
             ))}
+            {pools.length > 0 && (
+              <RadialGradient id={`${gid}pool`}>
+                <Stop offset="0%" stopColor="#fff" stopOpacity={0.7} />
+                <Stop offset="55%" stopColor="#fff" stopOpacity={0.35} />
+                <Stop offset="100%" stopColor="#fff" stopOpacity={0} />
+              </RadialGradient>
+            )}
+            {pools.length > 0 && (
+              <ClipPath id={`${gid}under`}>
+                {underLinePolygons(litLines, stageSize.w, stageSize.h, (ppf ?? 0) * toScreen * 1.5).map((poly, i) => <Polygon key={i} points={poly} />)}
+              </ClipPath>
+            )}
+            {pools.length > 0 && (
+              <Mask id={`${gid}lit`} x={0} y={0} width={stageSize.w} height={stageSize.h} maskUnits="userSpaceOnUse">
+                {pools.map((p, i) => <Ellipse key={i} cx={p.cx} cy={p.cy} rx={p.rx} ry={p.ry} fill={`url(#${gid}pool)`} />)}
+              </Mask>
+            )}
           </Defs>
+          {pools.length > 0 && photo && (
+            <G clipPath={`url(#${gid}under)`}>
+              <SvgImage href={{ uri: photo }} x={0} y={0} width={stageSize.w} height={stageSize.h} preserveAspectRatio="none" mask={`url(#${gid}lit)`} />
+              <G mask={`url(#${gid}lit)`} opacity={0.18}>
+                {pools.map((p, i) => <Ellipse key={i} cx={p.cx} cy={p.cy} rx={p.rx} ry={p.ry} fill={p.color} />)}
+              </G>
+            </G>
+          )}
           {guides && guideLines.map((line) => (
             <Polyline key={`t-${line.id}`} fill="none" stroke="rgba(255,255,255,.4)" strokeWidth={1.5} strokeDasharray="5 5" points={pts(line)} />
           ))}
@@ -73,7 +105,7 @@ export default function Stage({ project, preset, spacingInches, installType, nig
             <G key={`lights-${line.id}`}>
               <Polyline fill="none" points={pts(line)}
                 stroke={permanent ? '#3a3a3a' : '#1d3b22'} strokeWidth={Math.max(0.6, sz.wire * toScreen)} strokeLinecap="round" strokeLinejoin="round" opacity={night ? 0.6 : 0.9} />
-              {bulbPositions(line, project.calibration, size, spacingInches).map((b) => {
+              {(bulbsByLine.get(line.id) ?? []).map((b) => {
                 const color = bulbColorFor(preset, line, b.index);
                 const glow = `url(#${gid}glow${colorsUsed.indexOf(color)})`;
                 const x = b.point.x * stageSize.w; const y = b.point.y * stageSize.h;

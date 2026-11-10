@@ -143,6 +143,7 @@ export async function getSettings(userId: string): Promise<PricingSettings> {
       seasonal: {
         ratePerFoot: n('base_rate_per_foot'), secondStoryMultiplier: n('second_story_multiplier'), steepRoofFee: n('steep_roof_fee'),
         wreathPrice: n('wreath_price'), pathwayStakePrice: n('pathway_stake_price'), treeWrapPrice: n('tree_wrap_price'), timerPrice: n('timer_price'),
+        takedownReinstallFee: 0,
       },
       permanent: { ...DEFAULT_PERMANENT_RATES },
     }],

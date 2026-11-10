@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { InstallType, PricingProfile, PricingSettings, RateCard } from '@glowlab/shared';
-import { INSTALL_TYPE_LABELS, MAX_PRICING_PROFILES, RATE_CARD_FIELDS, newPricingProfile, validatePricingSettings } from '@glowlab/shared';
+import { INSTALL_TYPE_LABELS, MAX_PRICING_PROFILES, newPricingProfile, rateCardFields, validatePricingSettings } from '@glowlab/shared';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { useWorkspace } from '../workspace';
@@ -104,7 +104,7 @@ export default function SettingsScreen() {
       <Text style={[styles.muted, styles.small]}>
         {type === 'seasonal' ? 'Seasonal: hung for the holidays, taken down after.' : 'Permanent: year-round LED track lighting.'}
       </Text>
-      {RATE_CARD_FIELDS.map(({ key, label }) => (
+      {rateCardFields(type).map(({ key, label }) => (
         <View key={`${active.id}-${type}-${key}`} style={{ gap: 4 }}>
           <Text style={styles.label}>{label}</Text>
           <NumberInput value={active[type][key]} onChange={(v) => setRate(key, v)} />

@@ -2,7 +2,7 @@
 import assert from 'node:assert';
 import {
   PRESETS, DEFAULT_PRICING, getPreset, calibrationPixelsPerFoot, polylineLengthFeet,
-  bulbPositions, computeEstimate, totalFeet, normalizeEstimateOptions, bulbDrawSize, newPricingProfile, validatePricingSettings, bulbColorFor, nearestBulb,
+  bulbPositions, computeEstimate, totalFeet, normalizeEstimateOptions, bulbDrawSize, newPricingProfile, validatePricingSettings, bulbColorFor, nearestBulb, lightPools,
 } from '../dist/index.js';
 
 assert.equal(PRESETS.length, 8);
@@ -23,13 +23,39 @@ const calWide = { a: { x: 0, y: 0 }, b: { x: 0.05, y: 0 }, realFeet: 10 };
 assert.equal(calibrationPixelsPerFoot(calWide, wide), 10);
 assert.equal(polylineLengthFeet([{ x: 0, y: 0 }, { x: 0, y: 1 }], calWide, wide), 50);
 
-// Bulbs: convention = one bulb at the start of each spacing interval, far endpoint excluded.
-// 50 ft at 12" spacing => 50 bulbs, indices 0..49
+// Bulbs: one on every traced point (both ends too), evenly spaced in between.
+// 50 ft at 12" spacing => 50 gaps => 51 bulbs, indices 0..50, last one on the end point
 const positions = bulbPositions(line, cal, size, 12);
-assert.equal(positions.length, 50);
+assert.equal(positions.length, 51);
 assert.deepEqual(positions[0].point, { x: 0, y: 0 });
 assert.ok(Math.abs(positions[1].point.x - 0.01) < 1e-9); // 1 ft = 10px = 0.01 of width
-assert.equal(positions[49].index, 49);
+assert.equal(positions[50].index, 50);
+assert.ok(Math.abs(positions[50].point.x - 0.5) < 1e-9);
+
+// A gable: up 100px/over 100px each side = 14.14 ft per side. At 15" that's 11.3 => 11 even gaps
+// per side (15.4" each), with a bulb exactly on the peak standing straight up (angle 0 = level).
+const gable = { id: 'g', kind: 'roofline', points: [{ x: 0, y: 0.2 }, { x: 0.1, y: 0.1 }, { x: 0.2, y: 0.2 }] };
+const gb = bulbPositions(gable, cal, size, 15);
+assert.equal(gb.length, 23);
+assert.ok(Math.abs(gb[11].point.x - 0.1) < 1e-9 && Math.abs(gb[11].point.y - 0.1) < 1e-9);
+assert.ok(Math.abs(gb[11].angleDeg) < 1e-9);
+assert.ok(Math.abs(gb[22].point.x - 0.2) < 1e-9);
+// An off-center peak still gets its bulb: 3 ft 4 in then 7 ft => 3 gaps then 6 gaps (at 15")
+const offCenter = { id: 'o', kind: 'roofline', points: [{ x: 0, y: 0 }, { x: 0.0333, y: 0 }, { x: 0.1033, y: 0 }] };
+const oc = bulbPositions(offCenter, cal, size, 15);
+assert.equal(oc.length, 10);
+assert.ok(Math.abs(oc[3].point.x - 0.0333) < 1e-9);
+// A tracing wobble closer than half a spacing (5px = 6") doesn't get its own bulb
+const wobble = { id: 'w', kind: 'roofline', points: [{ x: 0, y: 0 }, { x: 0.005, y: 0 }, { x: 0.1, y: 0 }] };
+assert.equal(bulbPositions(wobble, cal, size, 15).length, 9); // 10 ft => 8 gaps of 15"
+// A closed outline (last point back on the first) doesn't double the corner bulb: 4 sides of 10 ft = 32 bulbs
+const box = { id: 'b', kind: 'window', points: [{ x: 0, y: 0 }, { x: 0.1, y: 0 }, { x: 0.1, y: 0.1 }, { x: 0, y: 0.1 }, { x: 0, y: 0 }] };
+assert.equal(bulbPositions(box, cal, size, 15).length, 32);
+
+// Night light pools: ~3 ft across each way, sitting mostly below the bulb
+const pool = lightPools([{ x: 100, y: 100, color: '#fff' }], 10, 1000)[0];
+assert.equal(pool.rx, 30);
+assert.ok(pool.cy > 100 && pool.cy - pool.ry < 100 && pool.cy - pool.ry > 90);
 
 // Candy-cane pattern alternates via index: even = red #FF2D2D, odd = warm white #FFD9A0
 const candy = getPreset('candy-cane');
@@ -40,7 +66,7 @@ assert.equal(colorAt(positions[2].index), '#FF2D2D');
 
 // Pricing, hand-computed with DEFAULT_PRICING (one "Standard" list: seasonal $7.50/ft, permanent $25/ft, bulbs every 15"):
 // 50 ft roofline, classic preset, seasonal, 1 story, not steep, no add-ons
-//   per-foot: 50 x 7.50 = $375.00 ; bulbs = ceil(50*12/15) = 40 ; deposit = 187.50
+//   per-foot: 50 x 7.50 = $375.00 ; bulbs = 50*12/15 = 40 gaps => 41 bulbs ; deposit = 187.50
 const opts = { stories: 1, steepRoof: false, installType: 'seasonal', pricingProfileId: null, ratePerFoot: null, addOns: { wreaths: 0, pathwayStakes: 0, treeWraps: 0, timers: 0 } };
 const project = {
   clientName: 'Test', address: '1 Test Ln', photoDataUrl: null,
@@ -55,12 +81,12 @@ assert.equal(std.bulbSpacingInches, 15);
 assert.equal(totalFeet(project, classic), 50);
 const est = computeEstimate(project, classic, DEFAULT_PRICING, opts);
 assert.equal(est.totalFeet, 50);
-assert.equal(est.bulbCount, 40);
-assert.equal(est.clipCount, 40);
+assert.equal(est.bulbCount, 41);
+assert.equal(est.clipCount, 41);
 assert.equal(est.total, 375);
 assert.equal(est.depositDue, 187.5);
-// Drawn bulbs match the count: 50 ft at 15" => 40 bulbs
-assert.equal(bulbPositions(line, cal, size, std.bulbSpacingInches).length, 40);
+// Drawn bulbs match the count: 50 ft at 15" => 41 bulbs
+assert.equal(bulbPositions(line, cal, size, std.bulbSpacingInches).length, 41);
 
 // Permanent: 50 x $25 = $1,250.00
 const perm = computeEstimate(project, classic, DEFAULT_PRICING, { ...opts, installType: 'permanent' });
@@ -78,7 +104,7 @@ const two = { profiles: [std, premium] };
 const prem = computeEstimate(project, classic, two, { ...opts, pricingProfileId: 'premium', addOns: { ...opts.addOns, wreaths: 1 } });
 assert.equal(prem.lines[0].amount, 450); // 50 x $9
 assert.equal(prem.lines[1].amount, 100); // premium wreath price
-assert.equal(prem.bulbCount, 50); // premium spacing 12" => 50 bulbs
+assert.equal(prem.bulbCount, 51); // premium spacing 12" => 50 gaps => 51 bulbs
 assert.equal(computeEstimate(project, classic, two, { ...opts, pricingProfileId: 'deleted' }).total, 375);
 
 // Full case: permanent + 2nd story + steep + add-ons (default permanent card)
@@ -139,3 +165,16 @@ assert.equal(nearestBulb(project, mistletoe, 15, { x: 0.3, y: 0.5 }), null); // 
 assert.equal(nearestBulb({ ...project, calibration: null }, mistletoe, 15, { x: 0.038, y: 0 }), null);
 
 console.log('shared tests: all passed');
+
+// Takedown / reinstall: seasonal-only flat fee; price lists saved before it existed read as 0
+const withTd = { profiles: [{ ...std, seasonal: { ...std.seasonal, takedownReinstallFee: 200 } }] };
+const td = computeEstimate(project, classic, withTd, opts);
+assert.equal(td.total, 575); // 375 + 200
+assert.ok(td.lines.some((l) => l.label === 'Takedown / reinstall' && l.amount === 200));
+assert.equal(computeEstimate(project, classic, withTd, { ...opts, installType: 'permanent' }).total, 1250); // not on permanent
+const legacyCard = { ...std.seasonal }; delete legacyCard.takedownReinstallFee;
+const v = validatePricingSettings({ profiles: [{ ...std, seasonal: legacyCard, permanent: { ...std.permanent, takedownReinstallFee: 99 } }] });
+assert.equal(v.settings.profiles[0].seasonal.takedownReinstallFee, 0);
+assert.equal(v.settings.profiles[0].permanent.takedownReinstallFee, 0);
+assert.equal(validatePricingSettings({ profiles: [{ ...std, seasonal: { ...std.seasonal, takedownReinstallFee: -5 } }] }).error?.includes('Takedown'), true);
+console.log('takedown tests: all passed');
