@@ -32,7 +32,7 @@ function AuthScreen() {
         <h1>✨ GlowLab</h1>
         <p className="muted">Photograph the house, trace the lines, show the glow, quote the job.</p>
         <form onSubmit={submit} className="form">
-          {mode === 'register' && <label>Business / your name<input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Caden" /></label>}
+          {mode === 'register' && <label>Business / your name<input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Bright Nights Lighting" /></label>}
           <label>Email<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></label>
           <label>Password<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" /></label>
           {error && <p className="error">{error}</p>}

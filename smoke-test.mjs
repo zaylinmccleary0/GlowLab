@@ -26,7 +26,7 @@ async function req(path, { method = 'GET', token, body } = {}) {
 const email = `smoke-${Date.now()}@example.com`;
 
 // 1. register + login
-const reg = await req('/api/auth/register', { method: 'POST', body: { name: 'Caden', email, password: 'test-pass-123' } });
+const reg = await req('/api/auth/register', { method: 'POST', body: { name: 'Test Lighting Co', email, password: 'test-pass-123' } });
 check('register returns a user', reg.user.email, email);
 const login = await req('/api/auth/login', { method: 'POST', body: { email, password: 'test-pass-123' } });
 const token = login.token;

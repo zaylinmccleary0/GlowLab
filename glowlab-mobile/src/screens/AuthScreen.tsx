@@ -31,7 +31,7 @@ export default function AuthScreen() {
       {mode === 'register' && (
         <>
           <Text style={styles.label}>Name</Text>
-          <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Caden" />
+          <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Bright Nights Lighting" />
         </>
       )}
       <Text style={styles.label}>Email</Text>
