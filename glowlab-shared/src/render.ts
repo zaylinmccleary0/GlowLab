@@ -39,3 +39,50 @@ export function bulbDrawSize(pixelsPerFoot: number, imageWidth: number, installT
   };
 }
 
+
+/** How far below a line of lights its glow reaches before fading out completely. */
+export const GLOW_FADE_FEET = 3;
+
+/**
+ * Night glow under a line of lights: one band per segment, hanging straight down from
+ * the line and fading out evenly over `feet`. Each band is described in its own
+ * sheared frame so the fade is always measured straight down from the line, even
+ * on a sloped roofline: draw rects from x=min(0,width) to max(0,width) inside
+ * `matrix(1, slope, 0, 1, x, y)`. Vertical segments (window sides) get none.
+ * `stops` color the band along its length from the bulbs on that segment (offset
+ * 0 = segment start, 1 = end), already softened toward warm white.
+ * All values in image pixels.
+ */
+export interface GlowBand { x: number; y: number; slope: number; width: number; drop: number; stops: { offset: number; color: string }[] }
+
+export function glowBands(
+  points: { x: number; y: number }[], pixelsPerFoot: number, imageSize: { width: number; height: number },
+  bulbs: { x: number; y: number; color: string }[] = [], feet = GLOW_FADE_FEET,
+): GlowBand[] {
+  const drop = feet * pixelsPerFoot;
+  const out: GlowBand[] = [];
+  for (let i = 1; i < points.length; i++) {
+    const ax = points[i - 1].x * imageSize.width; const ay = points[i - 1].y * imageSize.height;
+    const bx = points[i].x * imageSize.width; const by = points[i].y * imageSize.height;
+    const width = bx - ax;
+    if (Math.abs(width) < 0.5) continue;
+    const lo = Math.min(ax, bx) - 0.5; const hi = Math.max(ax, bx) + 0.5;
+    const stops = bulbs
+      .filter((b) => b.x >= lo && b.x <= hi && Math.abs(b.y - (ay + ((b.x - ax) / width) * (by - ay))) < Math.max(2, pixelsPerFoot * 0.5))
+      .map((b) => ({ offset: Math.min(1, Math.max(0, (b.x - ax) / width)), color: softGlow(b.color) }))
+      .sort((p, q) => p.offset - q.offset);
+    out.push({ x: ax, y: ay, slope: (by - ay) / width, width, drop, stops: stops.length ? stops : [{ offset: 0, color: softGlow('#FFD9A0') }] });
+  }
+  return out;
+}
+
+/** Opacity of the glow `t` of the way down (0 = at the lights, 1 = fully faded). Kept faint so the house's own colors show through. */
+export function glowOpacityAt(t: number): number {
+  return 0.34 * Math.pow(Math.max(0, 1 - t), 1.6);
+}
+
+/** A bulb's color mixed 45% toward warm white, so glow tints the house without repainting it. */
+export function softGlow(color: string): string {
+  const mix = (i: number, w: number) => Math.round(parseInt(color.slice(i, i + 2), 16) * 0.55 + w * 0.45).toString(16).padStart(2, '0');
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? `#${mix(1, 0xff)}${mix(3, 0xe6)}${mix(5, 0xc4)}`.toUpperCase() : '#FFE6C4';
+}

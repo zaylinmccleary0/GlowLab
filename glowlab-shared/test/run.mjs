@@ -173,3 +173,18 @@ assert.equal(v.settings.profiles[0].seasonal.takedownReinstallFee, 0);
 assert.equal(v.settings.profiles[0].permanent.takedownReinstallFee, 0);
 assert.equal(validatePricingSettings({ profiles: [{ ...std, seasonal: { ...std.seasonal, takedownReinstallFee: -5 } }] }).error?.includes('Takedown'), true);
 console.log('takedown tests: all passed');
+
+// Night glow bands: straight down from each sloped segment, 3 ft deep; vertical sides skipped
+{
+  const { glowBands, softGlow, glowOpacityAt } = await import('../dist/index.js');
+  const bulbs = [{ x: 0, y: 200, color: '#FF2D2D' }, { x: 50, y: 150, color: '#22C55E' }, { x: 300, y: 300, color: '#2E7DFF' }];
+  const bands = glowBands([{ x: 0, y: 0.2 }, { x: 0.1, y: 0.1 }, { x: 0.1, y: 0.3 }], 10, { width: 1000, height: 1000 }, bulbs);
+  assert.equal(bands.length, 1);
+  const { stops, ...shape } = bands[0];
+  assert.deepEqual(shape, { x: 0, y: 200, slope: -1, width: 100, drop: 30 });
+  // Only the 2 bulbs on this segment color it, in order, softened toward warm white
+  assert.deepEqual(stops, [{ offset: 0, color: softGlow('#FF2D2D') }, { offset: 0.5, color: softGlow('#22C55E') }]);
+  assert.equal(softGlow('#FF2D2D'), '#FF8071'); // red -> soft coral, not full red
+  assert.ok(glowOpacityAt(0) < 0.4 && glowOpacityAt(1) === 0 && glowOpacityAt(0.5) < glowOpacityAt(0.1));
+  console.log('glow tests: all passed');
+}

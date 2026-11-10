@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { EstimateOptions, InstallType, LineKind, Point, Preset, PricingSettings, Project, TracedLine } from '@glowlab/shared';
 import {
-  COOL_WHITE, INSTALL_TYPE_LABELS, PAINT_COLORS, bulbColorFor, bulbDrawSize, bulbPositions, nearestBulb, calibrationPixelsPerFoot, computeEstimate, lineLengthsFeet, money,
+  COOL_WHITE, INSTALL_TYPE_LABELS, PAINT_COLORS, bulbColorFor, bulbDrawSize, bulbPositions, nearestBulb, calibrationPixelsPerFoot, glowBands, glowOpacityAt, computeEstimate, lineLengthsFeet, money,
   QUOTE_DISCLAIMER, normalizeEstimateOptions, polylineLengthFeet, profileFor, rateCardFor, totalFeet,
 } from '@glowlab/shared';
 import { api, type ProjectInput } from '../api';
@@ -79,6 +79,12 @@ export function HouseStage({ project, preset, spacingInches, installType, night,
     onTap({ x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) });
   };
   const pts = (line: TracedLine) => line.points.map((p) => `${p.x * W},${p.y * H}`).join(' ');
+  // Night: a soft glow hangs under every lit line, tinted by the bulbs above it, fading out evenly 3 ft below.
+  const bands = night && ppf && sz
+    ? project.lines.filter((l) => preset.appliesTo.includes(l.kind)).flatMap((l) => glowBands(l.points, ppf, imageSize,
+      bulbPositions(l, project.calibration, imageSize, spacingInches).map((b) => ({ x: b.point.x * W, y: b.point.y * H, color: bulbColorFor(preset, l, b.index) }))))
+    : [];
+  const slices = Array.from({ length: 12 }, (_, k) => k);
   const litLines = sz ? project.lines.filter((l) => preset.appliesTo.includes(l.kind)) : [];
   const bulbsByLine = new Map(litLines.map((l) => [l.id, bulbPositions(l, project.calibration, imageSize, spacingInches)]));
 
@@ -97,7 +103,31 @@ export function HouseStage({ project, preset, spacingInches, installType, night,
               <stop offset="100%" stopColor={c} stopOpacity={0} />
             </radialGradient>
           ))}
+          {bands.length > 0 && (
+            <>
+              {bands.map((b, i) => (
+                <linearGradient key={i} id={`gc-${uid}-${i}`} gradientUnits="userSpaceOnUse" x1={0} y1={0} x2={b.width} y2={0}>
+                  {b.stops.map((s, k) => <stop key={k} offset={s.offset} stopColor={s.color} />)}
+                </linearGradient>
+              ))}
+              <filter id={`soft-${uid}`} filterUnits="userSpaceOnUse" x={0} y={0} width={W} height={H}>
+                <feGaussianBlur stdDeviation={(ppf ?? 0) * 0.3} />
+              </filter>
+            </>
+          )}
         </defs>
+        {bands.length > 0 && (
+          <g aria-hidden="true" filter={`url(#soft-${uid})`} style={{ mixBlendMode: 'screen' }}>
+            {bands.map((b, i) => (
+              <g key={i} transform={`matrix(1 ${b.slope} 0 1 ${b.x} ${b.y})`} fill={`url(#gc-${uid}-${i})`}>
+                {slices.map((k) => (
+                  <rect key={k} x={Math.min(0, b.width)} y={(b.drop * k) / slices.length} width={Math.abs(b.width)} height={b.drop / slices.length + 0.5}
+                    opacity={glowOpacityAt((k + 0.5) / slices.length)} />
+                ))}
+              </g>
+            ))}
+          </g>
+        )}
         {/* Tracing guides (dashed lines, pink calibration) only while designing, never on the quote. */}
         {interactive && project.lines.map((line) => (
           <polyline key={`trace-${line.id}`} fill="none" stroke="rgba(255,255,255,.35)" strokeWidth={W * 0.002} strokeDasharray="6 6" points={pts(line)} />

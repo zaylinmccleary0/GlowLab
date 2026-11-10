@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Image, Text, View } from 'react-native';
 import type { GestureResponderEvent } from 'react-native';
-import Svg, { Circle, Defs, Ellipse, G, Line, Polyline, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, Ellipse, G, Line, LinearGradient, Polyline, RadialGradient, Rect, Stop } from 'react-native-svg';
 import type { InstallType, Point, Preset, Project, TracedLine } from '@glowlab/shared';
-import { bulbColorFor, bulbDrawSize, bulbPositions, calibrationPixelsPerFoot } from '@glowlab/shared';
+import { bulbColorFor, bulbDrawSize, bulbPositions, calibrationPixelsPerFoot, glowBands, glowOpacityAt } from '@glowlab/shared';
 
 let stageCount = 0;
 
@@ -31,6 +31,12 @@ export default function Stage({ project, preset, spacingInches, installType, nig
   const guideLines = extraLines?.length ? [...project.lines, ...extraLines] : project.lines;
   const litLines = sz ? project.lines.filter((l) => preset.appliesTo.includes(l.kind)) : [];
   const bulbsByLine = new Map(litLines.map((l) => [l.id, bulbPositions(l, project.calibration, size, spacingInches)]));
+  // Night: a soft glow hangs under every lit line, tinted by the bulbs above it, fading out evenly 3 ft below.
+  const bands = night && ppf && sz && stageSize.w > 0
+    ? litLines.flatMap((l) => glowBands(l.points, ppf * toScreen, { width: stageSize.w, height: stageSize.h },
+      (bulbsByLine.get(l.id) ?? []).map((b) => ({ x: b.point.x * stageSize.w, y: b.point.y * stageSize.h, color: bulbColorFor(preset, l, b.index) }))))
+    : [];
+  const slices = Array.from({ length: 12 }, (_, k) => k);
   const pts = (line: TracedLine) => line.points.map((p) => `${p.x * stageSize.w},${p.y * stageSize.h}`).join(' ');
 
   const handleTouch = (e: GestureResponderEvent) => {
@@ -63,7 +69,20 @@ export default function Stage({ project, preset, spacingInches, installType, nig
                 <Stop offset="100%" stopColor={c} stopOpacity={0} />
               </RadialGradient>
             ))}
+            {bands.map((b, i) => (
+              <LinearGradient key={i} id={`${gid}gc${i}`} gradientUnits="userSpaceOnUse" x1={0} y1={0} x2={b.width} y2={0}>
+                {b.stops.map((s, k) => <Stop key={k} offset={s.offset} stopColor={s.color} />)}
+              </LinearGradient>
+            ))}
           </Defs>
+          {bands.map((b, i) => (
+            <G key={`glow-${i}`} transform={`matrix(1 ${b.slope} 0 1 ${b.x} ${b.y})`}>
+              {slices.map((k) => (
+                <Rect key={k} x={Math.min(0, b.width)} y={(b.drop * k) / slices.length} width={Math.abs(b.width)} height={b.drop / slices.length + 0.5}
+                  fill={`url(#${gid}gc${i})`} opacity={glowOpacityAt((k + 0.5) / slices.length)} />
+              ))}
+            </G>
+          ))}
           {guides && guideLines.map((line) => (
             <Polyline key={`t-${line.id}`} fill="none" stroke="rgba(255,255,255,.4)" strokeWidth={1.5} strokeDasharray="5 5" points={pts(line)} />
           ))}
