@@ -74,7 +74,7 @@ Verify the whole flow end-to-end (server must be running on a fresh DB):
 
 ```bash
 PORT=4300 DATABASE_PATH=/tmp/glowlab-smoke.db node glowlab-server/dist/index.js  # terminal 1
-node smoke-test.mjs                                                              # terminal 2 — 17 checks
+node smoke-test.mjs                                                              # terminal 2
 ```
 
 ## Deploying

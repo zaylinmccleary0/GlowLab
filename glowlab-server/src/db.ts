@@ -3,7 +3,10 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import type { Calibration, EstimateOptions, PricingSettings, Project, PublicUser, TracedLine } from '@glowlab/shared';
-import { DEFAULT_PRICING, DEFAULT_ESTIMATE_OPTIONS } from '@glowlab/shared';
+import {
+  DEFAULT_PRICING, DEFAULT_ESTIMATE_OPTIONS, DEFAULT_PERMANENT_RATES, DEFAULT_BULB_SPACING_INCHES,
+  normalizeEstimateOptions, validatePricingSettings,
+} from '@glowlab/shared';
 
 export interface DbUser { id: string; name: string; email: string; password_hash: string; created_at: string; }
 
@@ -24,7 +27,8 @@ const SCHEMA = [
   base_rate_per_foot REAL NOT NULL, purchase_multiplier REAL NOT NULL,
   second_story_multiplier REAL NOT NULL, steep_roof_fee REAL NOT NULL,
   wreath_price REAL NOT NULL, pathway_stake_price REAL NOT NULL,
-  tree_wrap_price REAL NOT NULL, timer_price REAL NOT NULL
+  tree_wrap_price REAL NOT NULL, timer_price REAL NOT NULL,
+  profiles_json TEXT
 )`,
   `CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
@@ -38,6 +42,14 @@ const SCHEMA = [
 ];
 
 let client: Client | null = null;
+
+/** Adds columns introduced after a database was first created. */
+async function migrate(db: Client): Promise<void> {
+  const cols = await db.execute('PRAGMA table_info(settings)');
+  if (!cols.rows.some((r) => r.name === 'profiles_json')) {
+    await db.execute('ALTER TABLE settings ADD COLUMN profiles_json TEXT');
+  }
+}
 let ready: Promise<Client> | null = null;
 
 /**
@@ -56,6 +68,7 @@ export function openDatabase(): Promise<Client> {
       client = createClient({ url: `file:${dbPath}` });
     }
     await client.batch(SCHEMA, 'write');
+    await migrate(client);
     return client;
   })().catch((err) => { ready = null; throw err; });
   return ready;
@@ -77,17 +90,28 @@ async function run(sql: string, args: InValue[] = []): Promise<number> {
 export function newId(): string { return randomUUID(); }
 export function nowIso(): string { return new Date().toISOString(); }
 
+/**
+ * Settings rows keep the original per-column prices (from before price lists existed)
+ * alongside profiles_json. New code reads/writes profiles_json; the old columns are still
+ * filled from the first price list's seasonal prices because they are NOT NULL.
+ */
+const SETTINGS_UPSERT = `INSERT INTO settings (user_id, base_rate_per_foot, purchase_multiplier, second_story_multiplier, steep_roof_fee, wreath_price, pathway_stake_price, tree_wrap_price, timer_price, profiles_json)
+    VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET base_rate_per_foot=excluded.base_rate_per_foot,
+    second_story_multiplier=excluded.second_story_multiplier, steep_roof_fee=excluded.steep_roof_fee, wreath_price=excluded.wreath_price,
+    pathway_stake_price=excluded.pathway_stake_price, tree_wrap_price=excluded.tree_wrap_price, timer_price=excluded.timer_price,
+    profiles_json=excluded.profiles_json`;
+function settingsArgs(userId: string, s: PricingSettings): InValue[] {
+  const c = s.profiles[0].seasonal;
+  return [userId, c.ratePerFoot, c.secondStoryMultiplier, c.steepRoofFee, c.wreathPrice, c.pathwayStakePrice, c.treeWrapPrice, c.timerPrice, JSON.stringify(s)];
+}
+
 export async function createUser(name: string, email: string, passwordHash: string): Promise<DbUser> {
   const user: DbUser = { id: newId(), name, email, password_hash: passwordHash, created_at: nowIso() };
-  const p = DEFAULT_PRICING;
   const db = await openDatabase();
   await db.batch([
     { sql: 'INSERT INTO users (id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)', args: [user.id, user.name, user.email, user.password_hash, user.created_at] },
-    {
-      sql: `INSERT INTO settings (user_id, base_rate_per_foot, purchase_multiplier, second_story_multiplier, steep_roof_fee, wreath_price, pathway_stake_price, tree_wrap_price, timer_price)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [user.id, p.baseRatePerFoot, p.purchaseMultiplier, p.secondStoryMultiplier, p.steepRoofFee, p.wreathPrice, p.pathwayStakePrice, p.treeWrapPrice, p.timerPrice],
-    },
+    { sql: SETTINGS_UPSERT, args: settingsArgs(user.id, DEFAULT_PRICING) },
   ], 'write');
   return user;
 }
@@ -100,22 +124,28 @@ export function getUserById(id: string): Promise<DbUser | undefined> {
 export function toPublicUser(user: DbUser): PublicUser { return { id: user.id, name: user.name, email: user.email }; }
 
 export async function getSettings(userId: string): Promise<PricingSettings> {
-  const row = await one<Record<string, number>>('SELECT * FROM settings WHERE user_id = ?', [userId]);
-  if (!row) return { ...DEFAULT_PRICING };
+  const row = await one<Record<string, number | string | null>>('SELECT * FROM settings WHERE user_id = ?', [userId]);
+  if (!row) return structuredClone(DEFAULT_PRICING);
+  if (typeof row.profiles_json === 'string') {
+    const { settings } = validatePricingSettings(JSON.parse(row.profiles_json));
+    if (settings) return settings;
+  }
+  // Settings saved before price lists existed: their prices become the seasonal side
+  // of a "Standard" list; permanent gets the defaults; bulbs every 15".
+  const n = (k: string) => Number(row[k]);
   return {
-    baseRatePerFoot: row.base_rate_per_foot, purchaseMultiplier: row.purchase_multiplier,
-    secondStoryMultiplier: row.second_story_multiplier, steepRoofFee: row.steep_roof_fee,
-    wreathPrice: row.wreath_price, pathwayStakePrice: row.pathway_stake_price,
-    treeWrapPrice: row.tree_wrap_price, timerPrice: row.timer_price,
+    profiles: [{
+      id: 'standard', name: 'Standard', bulbSpacingInches: DEFAULT_BULB_SPACING_INCHES,
+      seasonal: {
+        ratePerFoot: n('base_rate_per_foot'), secondStoryMultiplier: n('second_story_multiplier'), steepRoofFee: n('steep_roof_fee'),
+        wreathPrice: n('wreath_price'), pathwayStakePrice: n('pathway_stake_price'), treeWrapPrice: n('tree_wrap_price'), timerPrice: n('timer_price'),
+      },
+      permanent: { ...DEFAULT_PERMANENT_RATES },
+    }],
   };
 }
 export async function saveSettings(userId: string, s: PricingSettings): Promise<void> {
-  await run(`INSERT INTO settings (user_id, base_rate_per_foot, purchase_multiplier, second_story_multiplier, steep_roof_fee, wreath_price, pathway_stake_price, tree_wrap_price, timer_price)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET base_rate_per_foot=excluded.base_rate_per_foot, purchase_multiplier=excluded.purchase_multiplier,
-    second_story_multiplier=excluded.second_story_multiplier, steep_roof_fee=excluded.steep_roof_fee, wreath_price=excluded.wreath_price,
-    pathway_stake_price=excluded.pathway_stake_price, tree_wrap_price=excluded.tree_wrap_price, timer_price=excluded.timer_price`,
-  [userId, s.baseRatePerFoot, s.purchaseMultiplier, s.secondStoryMultiplier, s.steepRoofFee, s.wreathPrice, s.pathwayStakePrice, s.treeWrapPrice, s.timerPrice]);
+  await run(SETTINGS_UPSERT, settingsArgs(userId, s));
 }
 
 // ----- projects -----
@@ -126,7 +156,7 @@ function toProject(row: DbProject): Project {
     calibration: row.calibration_json ? (JSON.parse(row.calibration_json) as Calibration) : null,
     lines: JSON.parse(row.lines_json) as TracedLine[],
     presetId: row.preset_id,
-    estimateOptions: JSON.parse(row.estimate_options_json) as EstimateOptions,
+    estimateOptions: normalizeEstimateOptions(JSON.parse(row.estimate_options_json) as EstimateOptions),
     createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }

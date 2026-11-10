@@ -1,8 +1,14 @@
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import type { EstimateOptions, LineKind, Point, Preset, PricingSettings, Project, TracedLine } from '@glowlab/shared';
-import { bulbPositions, calibrationPixelsPerFoot, computeEstimate, lineLengthsFeet, money, polylineLengthFeet, totalFeet } from '@glowlab/shared';
+import type { EstimateOptions, InstallType, LineKind, Point, Preset, PricingSettings, Project, TracedLine } from '@glowlab/shared';
+import {
+  COOL_WHITE, INSTALL_TYPE_LABELS, bulbDrawSize, bulbPositions, calibrationPixelsPerFoot, computeEstimate, lineLengthsFeet, money,
+  normalizeEstimateOptions, polylineLengthFeet, profileFor, rateCardFor, totalFeet,
+} from '@glowlab/shared';
 import { api, type ProjectInput } from '../api';
+import NumberField from '../NumberField';
+
+const ICICLE_COLOR = COOL_WHITE;
 
 const KINDS: LineKind[] = ['roofline', 'ridge', 'gutter', 'window', 'door', 'pathway', 'tree', 'outline'];
 let uid = 0;
@@ -25,20 +31,29 @@ function DemoHouse() {
   );
 }
 
-export function HouseStage({ project, preset, night, interactive, onTap }: {
-  project: Project; preset: Preset; night: boolean; interactive?: boolean;
+export function HouseStage({ project, preset, spacingInches, installType, night, interactive, onTap }: {
+  project: Project; preset: Preset; spacingInches: number; installType: InstallType; night: boolean; interactive?: boolean;
   onTap?: (p: Point) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const uid = useId().replace(/:/g, '');
   const W = project.imageWidth || 1000;
   const H = project.imageHeight || 600;
-  const ppf = calibrationPixelsPerFoot(project.calibration, { width: W, height: H });
+  const imageSize = { width: W, height: H };
+  const ppf = calibrationPixelsPerFoot(project.calibration, imageSize);
+  // Bulbs are sized in real inches from the calibration, so they're to scale with the house.
+  const sz = ppf ? bulbDrawSize(ppf, W, installType) : null;
+  const permanent = installType === 'permanent';
+  const colors = Array.from(new Set([...preset.bulbColors, ICICLE_COLOR]));
+  const gradId = (c: string) => `glow-${uid}-${colors.indexOf(c)}`;
+  const glowOpacity = night ? 1 : 0.45;
 
   const handleClick = (e: React.MouseEvent) => {
     if (!interactive || !onTap || !ref.current) return;
     const r = ref.current.getBoundingClientRect();
     onTap({ x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) });
   };
+  const pts = (line: TracedLine) => line.points.map((p) => `${p.x * W},${p.y * H}`).join(' ');
 
   return (
     <div ref={ref} className="stage" style={{ aspectRatio: `${W} / ${H}` }} onClick={handleClick}>
@@ -47,39 +62,70 @@ export function HouseStage({ project, preset, night, interactive, onTap }: {
         : <div className="stage-photo" style={{ filter: night ? 'brightness(.55) saturate(1.1)' : 'none' }}><DemoHouse /></div>}
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="stage-overlay">
         <defs>
-          <filter id="bulbGlow" x="-120%" y="-120%" width="340%" height="340%">
-            <feGaussianBlur stdDeviation={W * 0.008} result="b" />
-            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
+          {colors.map((c) => (
+            <radialGradient key={c} id={gradId(c)}>
+              <stop offset="0%" stopColor={c} stopOpacity={0.85} />
+              <stop offset="30%" stopColor={c} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={c} stopOpacity={0} />
+            </radialGradient>
+          ))}
         </defs>
-        {project.lines.map((line) => (
-          <polyline key={`trace-${line.id}`} fill="none" stroke="rgba(255,255,255,.35)" strokeWidth={W * 0.002} strokeDasharray="6 6"
-            points={line.points.map((p) => `${p.x * W},${p.y * H}`).join(' ')} />
+        {/* Tracing guides (dashed lines, pink calibration) only while designing, never on the quote. */}
+        {interactive && project.lines.map((line) => (
+          <polyline key={`trace-${line.id}`} fill="none" stroke="rgba(255,255,255,.35)" strokeWidth={W * 0.002} strokeDasharray="6 6" points={pts(line)} />
         ))}
-        {project.calibration && (
+        {interactive && project.calibration && (
           <line x1={project.calibration.a.x * W} y1={project.calibration.a.y * H} x2={project.calibration.b.x * W} y2={project.calibration.b.y * H}
             stroke="#ff4fd8" strokeWidth={W * 0.003} />
         )}
-        {preset.icicle && ppf && project.lines.filter((l) => l.kind === 'gutter').map((line) => {
+        {sz && ppf && preset.icicle && project.lines.filter((l) => l.kind === 'gutter').map((line) => {
           const dropPx = ((preset.icicleDropInches ?? 18) / 12) * ppf;
-          return bulbPositions(line, project.calibration, { width: W, height: H }, preset.spacingInches * 2).map((b, i) => (
-            <g key={`ic-${line.id}-${i}`}>
-              <line x1={b.point.x * W} y1={b.point.y * H} x2={b.point.x * W} y2={b.point.y * H + dropPx} stroke="#EAF4FF" strokeWidth={W * 0.0016} opacity={0.9} />
-              <circle cx={b.point.x * W} cy={b.point.y * H + dropPx} r={W * 0.004} fill="#EAF4FF" filter="url(#bulbGlow)" />
-            </g>
-          ));
-        })}
-        {project.lines.filter((l) => preset.appliesTo.includes(l.kind)).map((line) =>
-          bulbPositions(line, project.calibration, { width: W, height: H }, preset.spacingInches).map((b) => {
-            const color = preset.bulbColors[b.index % preset.bulbColors.length];
+          return bulbPositions(line, project.calibration, imageSize, spacingInches * 2).map((b, i) => {
+            const x = b.point.x * W; const y = b.point.y * H;
             return (
-              <g key={`${line.id}-${b.index}`}>
-                <circle cx={b.point.x * W} cy={b.point.y * H} r={W * 0.013} fill={color} opacity={0.35} filter="url(#bulbGlow)" />
-                <circle cx={b.point.x * W} cy={b.point.y * H} r={W * 0.0055} fill={color} stroke="#fff8" strokeWidth={W * 0.001} />
+              <g key={`ic-${line.id}-${i}`}>
+                <line x1={x} y1={y} x2={x} y2={y + dropPx} stroke={ICICLE_COLOR} strokeWidth={sz.wire} opacity={0.85} />
+                <circle cx={x} cy={y + dropPx} r={sz.glowR * 0.7} fill={`url(#${gradId(ICICLE_COLOR)})`} opacity={glowOpacity} />
+                <circle cx={x} cy={y + dropPx} r={sz.rx * 0.8} fill={ICICLE_COLOR} />
               </g>
             );
-          }),
-        )}
+          });
+        })}
+        {sz && project.lines.filter((l) => preset.appliesTo.includes(l.kind)).map((line) => {
+          const bulbs = bulbPositions(line, project.calibration, imageSize, spacingInches);
+          return (
+            <g key={`lights-${line.id}`}>
+              {/* Cord (seasonal) or mounting track (permanent) */}
+              <polyline fill="none" points={pts(line)} strokeLinecap="round" strokeLinejoin="round"
+                stroke={permanent ? '#3a3a3a' : '#1d3b22'} strokeWidth={sz.wire} opacity={night ? 0.6 : 0.9} />
+              {bulbs.map((b) => {
+                const color = preset.bulbColors[b.index % preset.bulbColors.length];
+                const x = b.point.x * W; const y = b.point.y * H;
+                if (permanent) {
+                  return (
+                    <g key={b.index}>
+                      <circle cx={x} cy={y} r={sz.glowR} fill={`url(#${gradId(color)})`} opacity={glowOpacity} />
+                      <circle cx={x} cy={y} r={sz.rx} fill={color} stroke="#0006" strokeWidth={sz.rx * 0.25} />
+                    </g>
+                  );
+                }
+                // C9 bulb standing up off the cord: long axis perpendicular to the line, pointing upward.
+                const a = (b.angleDeg * Math.PI) / 180;
+                let nx = Math.sin(a); let ny = -Math.cos(a);
+                if (ny > 0) { nx = -nx; ny = -ny; }
+                const cx = x + nx * sz.ry; const cy = y + ny * sz.ry;
+                const rot = (Math.atan2(ny, nx) * 180) / Math.PI + 90;
+                return (
+                  <g key={b.index}>
+                    <circle cx={cx} cy={cy} r={sz.glowR} fill={`url(#${gradId(color)})`} opacity={glowOpacity} />
+                    <ellipse cx={cx} cy={cy} rx={sz.rx} ry={sz.ry} fill={color} transform={`rotate(${rot} ${cx} ${cy})`} />
+                    <ellipse cx={cx} cy={cy} rx={sz.rx * 0.45} ry={sz.ry * 0.5} fill="#fff" opacity={0.55} transform={`rotate(${rot} ${cx} ${cy})`} />
+                  </g>
+                );
+              })}
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
@@ -109,9 +155,12 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
     [project, preset, settings],
   );
 
-  const setOptions = (patch: Partial<EstimateOptions>) => setProject({ ...project, estimateOptions: { ...project.estimateOptions, ...patch } });
+  const opts = normalizeEstimateOptions(project.estimateOptions);
+  const profile = profileFor(settings, opts);
+  const card = rateCardFor(settings, opts);
+  const setOptions = (patch: Partial<EstimateOptions>) => setProject({ ...project, estimateOptions: { ...opts, ...patch } });
   const setAddOn = (key: keyof EstimateOptions['addOns'], delta: number) =>
-    setOptions({ addOns: { ...project.estimateOptions.addOns, [key]: Math.max(0, project.estimateOptions.addOns[key] + delta) } });
+    setOptions({ addOns: { ...opts.addOns, [key]: Math.max(0, opts.addOns[key] + delta) } });
 
   const onTap = (p: Point) => {
     if (mode === 'calibrate') {
@@ -196,7 +245,7 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
             <label className="toggle"><input type="checkbox" checked={night} onChange={(e) => setNight(e.target.checked)} /> Night mode</label>
           </div>
 
-          <HouseStage project={previewProject} preset={preset} night={night} interactive onTap={onTap} />
+          <HouseStage project={previewProject} preset={preset} spacingInches={profile.bulbSpacingInches} installType={opts.installType} night={night} interactive onTap={onTap} />
           {current.length > 0 && (
             <p className="muted small">Current line: {current.length} point(s), {polylineLengthFeet(current, project.calibration, size).toFixed(1)} ft — click the photo to add points.</p>
           )}
@@ -243,26 +292,43 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
                 <button key={p.id} className={p.id === preset.id ? 'chip active' : 'chip'} onClick={() => setProject({ ...project, presetId: p.id })} title={p.description}>{p.name}</button>
               ))}
             </div>
-            <p className="muted small">{preset.description} Bulbs: {preset.bulbColors.map((c) => <span key={c} className="swatch" style={{ background: c }} />)} {preset.bulbSize}, every {preset.spacingInches}&quot;</p>
+            <p className="muted small">{preset.description} Bulbs: {preset.bulbColors.map((c) => <span key={c} className="swatch" style={{ background: c }} />)} {opts.installType === 'permanent' ? 'permanent LED' : preset.bulbSize}, every {profile.bulbSpacingInches}&quot;</p>
           </div>
         </div>
 
         <aside className="estimate-panel no-print">
           <h3>Estimate</h3>
+          {settings.profiles.length > 1 && (
+            <label className="field">Price list
+              <select value={profile.id} onChange={(e) => setOptions({ pricingProfileId: e.target.value })}>
+                {settings.profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+          )}
           <div className="chips">
-            <button className={project.estimateOptions.model === 'rental' ? 'chip active' : 'chip'} onClick={() => setOptions({ model: 'rental' })}>Rental</button>
-            <button className={project.estimateOptions.model === 'purchase' ? 'chip active' : 'chip'} onClick={() => setOptions({ model: 'purchase' })}>Purchase</button>
+            {(['seasonal', 'permanent'] as InstallType[]).map((t) => (
+              <button key={t} className={opts.installType === t ? 'chip active' : 'chip'} onClick={() => setOptions({ installType: t })}>{INSTALL_TYPE_LABELS[t]}</button>
+            ))}
           </div>
+          <label className="field">Price per linear foot ($)
+            <NumberField value={opts.ratePerFoot} placeholder={card.ratePerFoot.toFixed(2)}
+              onChange={(v) => setOptions({ ratePerFoot: Number.isNaN(v) ? null : v })} ariaLabel="Price per linear foot" />
+            <span className="muted small">
+              {opts.ratePerFoot === null
+                ? <>Using {profile.name} {INSTALL_TYPE_LABELS[opts.installType].toLowerCase()} rate, {money(card.ratePerFoot)}/ft. Type a price to change it for this job.</>
+                : <>Custom rate for this job. <button className="link" onClick={() => setOptions({ ratePerFoot: null })}>Use {money(card.ratePerFoot)}/ft</button></>}
+            </span>
+          </label>
           <div className="chips">
-            <button className={project.estimateOptions.stories === 1 ? 'chip active' : 'chip'} onClick={() => setOptions({ stories: 1 })}>1 story</button>
-            <button className={project.estimateOptions.stories === 2 ? 'chip active' : 'chip'} onClick={() => setOptions({ stories: 2 })}>2 stories</button>
+            <button className={opts.stories === 1 ? 'chip active' : 'chip'} onClick={() => setOptions({ stories: 1 })}>1 story</button>
+            <button className={opts.stories === 2 ? 'chip active' : 'chip'} onClick={() => setOptions({ stories: 2 })}>2 stories</button>
           </div>
-          <label className="toggle"><input type="checkbox" checked={project.estimateOptions.steepRoof} onChange={(e) => setOptions({ steepRoof: e.target.checked })} /> Steep / difficult roof (+{money(settings.steepRoofFee)})</label>
-          {([['wreaths', 'Wreaths', settings.wreathPrice], ['pathwayStakes', 'Pathway stakes', settings.pathwayStakePrice], ['treeWraps', 'Tree wraps', settings.treeWrapPrice], ['timers', 'Timers', settings.timerPrice]] as const).map(([key, label, price]) => (
+          <label className="toggle"><input type="checkbox" checked={opts.steepRoof} onChange={(e) => setOptions({ steepRoof: e.target.checked })} /> Steep / difficult roof (+{money(card.steepRoofFee)})</label>
+          {([['wreaths', 'Wreaths', card.wreathPrice], ['pathwayStakes', 'Pathway stakes', card.pathwayStakePrice], ['treeWraps', 'Tree wraps', card.treeWrapPrice], ['timers', 'Timers', card.timerPrice]] as const).map(([key, label, price]) => (
             <div key={key} className="stepper">
               <span>{label} <span className="muted small">{money(price)} ea</span></span>
               <span>
-                <button onClick={() => setAddOn(key, -1)}>−</button> {project.estimateOptions.addOns[key]} <button onClick={() => setAddOn(key, 1)}>+</button>
+                <button onClick={() => setAddOn(key, -1)}>−</button> {opts.addOns[key]} <button onClick={() => setAddOn(key, 1)}>+</button>
               </span>
             </div>
           ))}
@@ -283,15 +349,17 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
         <section className="quote">
           <h2>✨ GlowLab — Holiday Lighting Estimate</h2>
           <p><strong>{project.clientName}</strong>{project.address ? ` — ${project.address}` : ''}<br />
-            Design: <strong>{preset.name}</strong> ({preset.bulbSize}, {preset.spacingInches}&quot; spacing)</p>
-          <HouseStage project={project} preset={preset} night={night} />
+            Design: <strong>{preset.name}</strong> — {INSTALL_TYPE_LABELS[opts.installType]} ({opts.installType === 'permanent' ? 'permanent LED' : preset.bulbSize}, {profile.bulbSpacingInches}&quot; spacing)</p>
+          <HouseStage project={project} preset={preset} spacingInches={profile.bulbSpacingInches} installType={opts.installType} night={night} />
           <table className="estimate-table"><tbody>
             {estimate.lines.map((l, i) => <tr key={i}><td>{l.label}<br /><span className="muted small">{l.detail}</span></td><td className="num">{money(l.amount)}</td></tr>)}
           </tbody></table>
           <p>{estimate.totalFeet} ft of lighting • {estimate.bulbCount} bulbs • {estimate.clipCount} clips</p>
           <p className="total-row"><span>Total</span><span>{money(estimate.total)}</span></p>
           <p className="total-row deposit"><span>Deposit due to book (50%)</span><span>{money(estimate.depositDue)}</span></p>
-          <p className="muted small">Rental includes installation and January takedown. Estimate based on the traced design above; final footage confirmed on install day.</p>
+          <p className="muted small">{opts.installType === 'permanent'
+            ? 'Permanent lighting is installed once and stays up year-round.'
+            : 'Seasonal lighting includes installation and takedown after the holidays.'} Estimate based on the traced design above; final footage confirmed on install day.</p>
           <button className="primary no-print" onClick={() => window.print()}>Print quote</button>
         </section>
       )}

@@ -50,6 +50,8 @@ div.stage-photo { object-fit: initial; }
 .line-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .line-list li { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
 .estimate-panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+.estimate-panel .field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; font-size: 14px; }
+.estimate-panel .field .link { padding: 0; }
 .stepper { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-top: 1px dashed var(--line); }
 .estimate-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
 .estimate-table td { padding: 7px 4px; border-top: 1px solid var(--line); vertical-align: top; }

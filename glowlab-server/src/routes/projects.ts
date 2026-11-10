@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import type { EstimateOptions, Project } from '@glowlab/shared';
-import { DEFAULT_ESTIMATE_OPTIONS, computeEstimate, getPreset } from '@glowlab/shared';
+import { DEFAULT_ESTIMATE_OPTIONS, computeEstimate, getPreset, normalizeEstimateOptions } from '@glowlab/shared';
 import { deleteProject, getProject, getSettings, insertProject, listProjects, updateProject, type ProjectInput } from '../db';
 
 const router = Router();
@@ -21,18 +21,7 @@ function parseInput(body: Record<string, unknown>, existing?: Project): { input?
   if (calibration !== null) {
     if (!calibration.a || !calibration.b || !(Number(calibration.realFeet) > 0)) return { error: 'calibration needs a, b and realFeet > 0' };
   }
-  const opts = ((body.estimateOptions as EstimateOptions) ?? existing?.estimateOptions ?? DEFAULT_ESTIMATE_OPTIONS);
-  const estimateOptions: EstimateOptions = {
-    stories: opts.stories === 2 ? 2 : 1,
-    steepRoof: Boolean(opts.steepRoof),
-    model: opts.model === 'purchase' ? 'purchase' : 'rental',
-    addOns: {
-      wreaths: Math.max(0, Math.floor(Number(opts.addOns?.wreaths) || 0)),
-      pathwayStakes: Math.max(0, Math.floor(Number(opts.addOns?.pathwayStakes) || 0)),
-      treeWraps: Math.max(0, Math.floor(Number(opts.addOns?.treeWraps) || 0)),
-      timers: Math.max(0, Math.floor(Number(opts.addOns?.timers) || 0)),
-    },
-  };
+  const estimateOptions = normalizeEstimateOptions((body.estimateOptions as EstimateOptions) ?? existing?.estimateOptions ?? DEFAULT_ESTIMATE_OPTIONS);
   return {
     input: {
       clientName: clientName.trim(),

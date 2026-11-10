@@ -2,7 +2,7 @@
 import assert from 'node:assert';
 import {
   PRESETS, DEFAULT_PRICING, getPreset, calibrationPixelsPerFoot, polylineLengthFeet,
-  bulbPositions, computeEstimate, totalFeet,
+  bulbPositions, computeEstimate, totalFeet, normalizeEstimateOptions, bulbDrawSize, newPricingProfile, validatePricingSettings,
 } from '../dist/index.js';
 
 assert.equal(PRESETS.length, 7);
@@ -38,39 +38,91 @@ assert.equal(colorAt(positions[0].index), '#FF2D2D');
 assert.equal(colorAt(positions[1].index), '#FFD9A0');
 assert.equal(colorAt(positions[2].index), '#FF2D2D');
 
-// Pricing, hand-computed with DEFAULT_PRICING (base $7.50/ft rental):
-// 50 ft roofline, classic preset, 1 story, not steep, no add-ons
-//   per-foot: 50 x 7.50 = $375.00 ; bulbs = ceil(50*12/12) = 50 ; deposit = 187.50
+// Pricing, hand-computed with DEFAULT_PRICING (one "Standard" list: seasonal $7.50/ft, permanent $25/ft, bulbs every 15"):
+// 50 ft roofline, classic preset, seasonal, 1 story, not steep, no add-ons
+//   per-foot: 50 x 7.50 = $375.00 ; bulbs = ceil(50*12/15) = 40 ; deposit = 187.50
+const opts = { stories: 1, steepRoof: false, installType: 'seasonal', pricingProfileId: null, ratePerFoot: null, addOns: { wreaths: 0, pathwayStakes: 0, treeWraps: 0, timers: 0 } };
 const project = {
   clientName: 'Test', address: '1 Test Ln', photoDataUrl: null,
   imageWidth: 1000, imageHeight: 1000, calibration: cal, lines: [line],
-  presetId: 'classic-warm-white',
-  estimateOptions: { stories: 1, steepRoof: false, model: 'rental', addOns: { wreaths: 0, pathwayStakes: 0, treeWraps: 0, timers: 0 } },
+  presetId: 'classic-warm-white', estimateOptions: opts,
   id: 'p1', createdAt: '', updatedAt: '',
 };
-assert.equal(totalFeet(project, getPreset('classic-warm-white')), 50);
-const est = computeEstimate(project, getPreset('classic-warm-white'), DEFAULT_PRICING, project.estimateOptions);
+const classic = getPreset('classic-warm-white');
+const std = DEFAULT_PRICING.profiles[0];
+assert.equal(DEFAULT_PRICING.profiles.length, 1);
+assert.equal(std.bulbSpacingInches, 15);
+assert.equal(totalFeet(project, classic), 50);
+const est = computeEstimate(project, classic, DEFAULT_PRICING, opts);
 assert.equal(est.totalFeet, 50);
-assert.equal(est.bulbCount, 50);
-assert.equal(est.clipCount, 50);
+assert.equal(est.bulbCount, 40);
+assert.equal(est.clipCount, 40);
 assert.equal(est.total, 375);
 assert.equal(est.depositDue, 187.5);
+// Drawn bulbs match the count: 50 ft at 15" => 40 bulbs
+assert.equal(bulbPositions(line, cal, size, std.bulbSpacingInches).length, 40);
 
-// Full case: purchase + 2nd story + steep + add-ons
-//   per-foot: 50 x 7.50 x 1.6 x 1.25 = $750.00
-//   add-ons: 1 wreath $85 + 10 stakes $180 + 1 tree wrap $120 + 1 timer $45 = $430
-//   steep fee $150  =>  total $1,330.00, deposit $665.00
-const est2 = computeEstimate(project, getPreset('classic-warm-white'), DEFAULT_PRICING, {
-  stories: 2, steepRoof: true, model: 'purchase',
-  addOns: { wreaths: 1, pathwayStakes: 10, treeWraps: 1, timers: 1 },
+// Permanent: 50 x $25 = $1,250.00
+const perm = computeEstimate(project, classic, DEFAULT_PRICING, { ...opts, installType: 'permanent' });
+assert.equal(perm.total, 1250);
+assert.ok(perm.lines[0].label.includes('Permanent'));
+
+// Custom rate for this job: 50 x $10 = $500, whichever install type
+assert.equal(computeEstimate(project, classic, DEFAULT_PRICING, { ...opts, ratePerFoot: 10 }).total, 500);
+assert.equal(computeEstimate(project, classic, DEFAULT_PRICING, { ...opts, installType: 'permanent', ratePerFoot: 10 }).total, 500);
+
+// Several saved price lists: the job's pick wins; unknown/null falls back to the first
+const premium = { ...newPricingProfile('premium', 'Premium'), bulbSpacingInches: 12 };
+premium.seasonal = { ...premium.seasonal, ratePerFoot: 9, wreathPrice: 100 };
+const two = { profiles: [std, premium] };
+const prem = computeEstimate(project, classic, two, { ...opts, pricingProfileId: 'premium', addOns: { ...opts.addOns, wreaths: 1 } });
+assert.equal(prem.lines[0].amount, 450); // 50 x $9
+assert.equal(prem.lines[1].amount, 100); // premium wreath price
+assert.equal(prem.bulbCount, 50); // premium spacing 12" => 50 bulbs
+assert.equal(computeEstimate(project, classic, two, { ...opts, pricingProfileId: 'deleted' }).total, 375);
+
+// Full case: permanent + 2nd story + steep + add-ons (default permanent card)
+//   per-foot: 50 x 25 x 1.25 = $1,562.50
+//   add-ons: 1 wreath $85 + 10 stakes $180 + 1 tree wrap $120 = $385 (timers $0 on permanent)
+//   steep fee $250  =>  total $2,197.50, deposit $1,098.75
+const est2 = computeEstimate(project, classic, DEFAULT_PRICING, {
+  stories: 2, steepRoof: true, installType: 'permanent', pricingProfileId: null, ratePerFoot: null,
+  addOns: { wreaths: 1, pathwayStakes: 10, treeWraps: 1, timers: 0 },
 });
-assert.equal(est2.lines[0].amount, 750);
-assert.equal(est2.total, 1330);
-assert.equal(est2.depositDue, 665);
+assert.equal(est2.lines[0].amount, 1562.5);
+assert.equal(est2.total, 2197.5);
+assert.equal(est2.depositDue, 1098.75);
+
+// Old saved projects (rental/purchase `model`, no installType) read as seasonal on the default list
+const legacy = normalizeEstimateOptions({ stories: 1, steepRoof: false, model: 'purchase', addOns: { wreaths: 2 } });
+assert.equal(legacy.installType, 'seasonal');
+assert.equal(legacy.pricingProfileId, null);
+assert.equal(legacy.ratePerFoot, null);
+assert.equal(legacy.addOns.wreaths, 2);
+assert.equal(legacy.addOns.timers, 0);
+assert.equal(normalizeEstimateOptions({ ratePerFoot: -3 }).ratePerFoot, null);
+
+// Settings validation
+assert.ok(validatePricingSettings(DEFAULT_PRICING).settings);
+assert.ok(validatePricingSettings({ profiles: [] }).error);
+assert.ok(validatePricingSettings({ profiles: [std, premium, { ...std, id: 'c' }, { ...std, id: 'd' }] }).error); // max 3
+assert.ok(validatePricingSettings({ profiles: [std, { ...premium, id: 'standard' }] }).error); // duplicate id
+assert.ok(validatePricingSettings({ profiles: [{ ...std, name: ' ' }] }).error);
+assert.ok(validatePricingSettings({ profiles: [{ ...std, bulbSpacingInches: 0 }] }).error);
+assert.ok(validatePricingSettings({ profiles: [{ ...std, permanent: { ...std.permanent, ratePerFoot: '' } }] }).error);
+assert.ok(validatePricingSettings({ profiles: [{ ...std, seasonal: { ...std.seasonal, wreathPrice: -1 } }] }).error);
+
+// To-scale drawing: 10 px/ft => C9 is 1.2" x 2.4" => rx 0.5px, ry 1px before clamping;
+// on a 1000px-wide image the minimum radius is 1.2px, so both clamp up to 1.2.
+const small = bulbDrawSize(10, 1000, 'seasonal');
+assert.ok(Math.abs(small.rx - 1.2) < 1e-9 && Math.abs(small.ry - 1.2) < 1e-9);
+// Close-up, 120 px/ft (10 px/in): C9 rx = 0.6" = 6px, ry = 1.2" = 12px (true size, no clamping)
+const close = bulbDrawSize(120, 4000, 'seasonal');
+assert.ok(Math.abs(close.rx - 6) < 1e-9 && Math.abs(close.ry - 12) < 1e-9);
 
 // Preset filtering: a window line does not count toward Classic Warm White (roofline only)
 const project2 = { ...project, lines: [line, { id: 'l2', kind: 'window', points: [{ x: 0, y: 0 }, { x: 0.2, y: 0 }] }] };
-assert.equal(totalFeet(project2, getPreset('classic-warm-white')), 50);
+assert.equal(totalFeet(project2, classic), 50);
 assert.equal(totalFeet(project2), 70);
 
 console.log('shared tests: all passed');

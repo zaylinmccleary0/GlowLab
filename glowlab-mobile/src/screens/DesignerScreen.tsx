@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import type { GestureResponderEvent } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import Svg, { Circle, Line, Polyline } from 'react-native-svg';
+import Svg, { Circle, Defs, Ellipse, G, Line, Polyline, RadialGradient, Stop } from 'react-native-svg';
 import type { LineKind, Point } from '@glowlab/shared';
-import { bulbPositions, lineLengthsFeet, polylineLengthFeet, totalFeet } from '@glowlab/shared';
+import {
+  bulbDrawSize, bulbPositions, calibrationPixelsPerFoot, lineLengthsFeet, normalizeEstimateOptions, polylineLengthFeet, profileFor, totalFeet,
+} from '@glowlab/shared';
 import { useWorkspace } from '../workspace';
 import { colors, styles } from '../theme';
 
@@ -19,7 +21,7 @@ let uid = 0;
  * long as width/height share the photo's aspect ratio.
  */
 export default function DesignerScreen() {
-  const { current, presets, updateCurrent, saveCurrent } = useWorkspace();
+  const { current, presets, settings, updateCurrent, saveCurrent } = useWorkspace();
   const [mode, setMode] = useState<'trace' | 'calibrate'>('trace');
   const [kind, setKind] = useState<LineKind>('roofline');
   const [currentPts, setCurrentPts] = useState<Point[]>([]);
@@ -37,6 +39,14 @@ export default function DesignerScreen() {
   const size = { width: project.imageWidth, height: project.imageHeight };
   const lengths = lineLengthsFeet(project);
   const feet = preset ? totalFeet(project, preset) : 0;
+  const opts = normalizeEstimateOptions(project.estimateOptions);
+  const spacingInches = profileFor(settings, opts).bulbSpacingInches;
+  const permanent = opts.installType === 'permanent';
+  // Bulbs are sized in real inches from the calibration (image pixels), then scaled to the on-screen stage.
+  const ppf = calibrationPixelsPerFoot(project.calibration, size);
+  const toScreen = stageSize.w / Math.max(1, project.imageWidth);
+  const sz = ppf ? bulbDrawSize(ppf, project.imageWidth, opts.installType) : null;
+  const colorsUsed = preset ? Array.from(new Set(preset.bulbColors)) : [];
 
   const onTap = (e: GestureResponderEvent) => {
     const { locationX, locationY } = e.nativeEvent;
@@ -121,12 +131,46 @@ export default function DesignerScreen() {
               <Line x1={project.calibration.a.x * stageSize.w} y1={project.calibration.a.y * stageSize.h}
                 x2={project.calibration.b.x * stageSize.w} y2={project.calibration.b.y * stageSize.h} stroke="#ff4fd8" strokeWidth={2} />
             )}
-            {project.lines.filter((l) => preset.appliesTo.includes(l.kind)).map((line) =>
-              bulbPositions(line, project.calibration, size, preset.spacingInches).map((b) => (
-                <Circle key={`${line.id}-${b.index}`} cx={b.point.x * stageSize.w} cy={b.point.y * stageSize.h} r={5}
-                  fill={preset.bulbColors[b.index % preset.bulbColors.length]} stroke="#fff8" strokeWidth={0.7} />
-              )),
-            )}
+            <Defs>
+              {colorsUsed.map((c, i) => (
+                <RadialGradient key={c} id={`glow${i}`}>
+                  <Stop offset="0%" stopColor={c} stopOpacity={0.85} />
+                  <Stop offset="30%" stopColor={c} stopOpacity={0.35} />
+                  <Stop offset="100%" stopColor={c} stopOpacity={0} />
+                </RadialGradient>
+              ))}
+            </Defs>
+            {sz && project.lines.filter((l) => preset.appliesTo.includes(l.kind)).map((line) => (
+              <G key={`lights-${line.id}`}>
+                <Polyline fill="none" points={line.points.map((p) => `${p.x * stageSize.w},${p.y * stageSize.h}`).join(' ')}
+                  stroke={permanent ? '#3a3a3a' : '#1d3b22'} strokeWidth={Math.max(0.6, sz.wire * toScreen)} strokeLinecap="round" strokeLinejoin="round" opacity={night ? 0.6 : 0.9} />
+                {bulbPositions(line, project.calibration, size, spacingInches).map((b) => {
+                  const color = preset.bulbColors[b.index % preset.bulbColors.length];
+                  const glow = `url(#glow${colorsUsed.indexOf(color)})`;
+                  const x = b.point.x * stageSize.w; const y = b.point.y * stageSize.h;
+                  const rx = Math.max(1, sz.rx * toScreen); const ry = Math.max(1, sz.ry * toScreen); const gr = sz.glowR * toScreen;
+                  if (permanent) {
+                    return (
+                      <G key={b.index}>
+                        <Circle cx={x} cy={y} r={gr} fill={glow} opacity={night ? 1 : 0.45} />
+                        <Circle cx={x} cy={y} r={rx} fill={color} />
+                      </G>
+                    );
+                  }
+                  const a = (b.angleDeg * Math.PI) / 180;
+                  let nx = Math.sin(a); let ny = -Math.cos(a);
+                  if (ny > 0) { nx = -nx; ny = -ny; }
+                  const cx = x + nx * ry; const cy = y + ny * ry;
+                  const rot = (Math.atan2(ny, nx) * 180) / Math.PI + 90;
+                  return (
+                    <G key={b.index}>
+                      <Circle cx={cx} cy={cy} r={gr} fill={glow} opacity={night ? 1 : 0.45} />
+                      <Ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill={color} rotation={rot} origin={`${cx}, ${cy}`} />
+                    </G>
+                  );
+                })}
+              </G>
+            ))}
           </Svg>
         )}
       </View>
