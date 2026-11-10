@@ -48,6 +48,18 @@ export default function QuoteView({ project, presets, settings, onPick, onEdit }
             ? 'Seasonal lighting is hung for the holidays; takedown / reinstall is listed above.'
             : 'Seasonal lighting includes installation and takedown after the holidays.'} Estimate based on the traced design above; final footage confirmed on install day.</p>
         <p className="quote-disclaimer"><strong>Please note:</strong> {QUOTE_DISCLAIMER}</p>
+        <div className="sign-block">
+          <p className="sign-intro">By signing below, the customer accepts this estimate and agrees to the 50% deposit of <strong>{money(estimate.depositDue)}</strong> to book the installation.</p>
+          <div className="sign-grid">
+            <div className="sign-field sign-wide"><span className="sign-line" /><span className="sign-label">Customer signature</span></div>
+            <div className="sign-field"><span className="sign-line" /><span className="sign-label">Date</span></div>
+            <div className="sign-field sign-wide"><span className="sign-line" /><span className="sign-label">Printed name</span></div>
+            <div className="sign-field"><span className="sign-line" /><span className="sign-label">Phone</span></div>
+            <div className="sign-field sign-wide"><span className="sign-line" /><span className="sign-label">Company representative</span></div>
+            <div className="sign-field"><span className="sign-line" /><span className="sign-label">Date</span></div>
+          </div>
+          <p className="sign-issued muted small">Estimate prepared {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        </div>
       </section>
     </div>
   );
