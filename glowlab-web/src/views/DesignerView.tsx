@@ -139,7 +139,22 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
-      img.onload = () => setProject({ ...project, photoDataUrl: String(reader.result), imageWidth: img.naturalWidth, imageHeight: img.naturalHeight, calibration: null, lines: [] });
+      img.onload = () => {
+        // Shrink to at most 1600px on the long edge as a JPEG: phone photos are 5-10 MB,
+        // and the API (Vercel) rejects requests over 4.5 MB.
+        const MAX = 1600;
+        const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth * scale);
+        const h = Math.round(img.naturalHeight * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { setError('Could not process that photo.'); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        setProject({ ...project, photoDataUrl: dataUrl, imageWidth: w, imageHeight: h, calibration: null, lines: [] });
+      };
+      img.onerror = () => setError('Could not read that photo.');
       img.src = String(reader.result);
     };
     reader.readAsDataURL(file);

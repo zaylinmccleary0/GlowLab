@@ -18,23 +18,25 @@ export function signToken(userId: string): string {
   return jwt.sign({ sub: userId }, getJwtSecret(), { algorithm: 'HS256', expiresIn: '30d' });
 }
 
-export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const header = req.headers.authorization || '';
   const match = /^Bearer\s+(.+)$/i.exec(header);
   if (!match) {
     res.status(401).json({ error: 'Missing or invalid Authorization header' });
     return;
   }
+  let payload: { sub: string };
   try {
-    const payload = jwt.verify(match[1], getJwtSecret(), { algorithms: ['HS256'] }) as { sub: string };
-    const user: DbUser | undefined = getUserById(payload.sub);
-    if (!user) {
-      res.status(401).json({ error: 'Invalid token' });
-      return;
-    }
-    req.currentUser = user;
-    next();
+    payload = jwt.verify(match[1], getJwtSecret(), { algorithms: ['HS256'] }) as { sub: string };
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });
+    return;
   }
+  const user: DbUser | undefined = await getUserById(payload.sub);
+  if (!user) {
+    res.status(401).json({ error: 'Invalid token' });
+    return;
+  }
+  req.currentUser = user;
+  next();
 }

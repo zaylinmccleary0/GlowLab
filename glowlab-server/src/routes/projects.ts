@@ -45,40 +45,40 @@ function parseInput(body: Record<string, unknown>, existing?: Project): { input?
   };
 }
 
-router.get('/', (req: Request, res: Response) => { res.json({ projects: listProjects(req.currentUser.id) }); });
+router.get('/', async (req: Request, res: Response) => { res.json({ projects: await listProjects(req.currentUser.id) }); });
 
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const { input, error } = parseInput(req.body ?? {});
   if (!input) { res.status(400).json({ error }); return; }
-  res.status(201).json({ project: insertProject(req.currentUser.id, input) });
+  res.status(201).json({ project: await insertProject(req.currentUser.id, input) });
 });
 
-router.get('/:id', (req: Request, res: Response) => {
-  const project = getProject(req.currentUser.id, req.params.id);
+router.get('/:id', async (req: Request, res: Response) => {
+  const project = await getProject(req.currentUser.id, String(req.params.id));
   if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
   res.json({ project });
 });
 
-router.put('/:id', (req: Request, res: Response) => {
-  const existing = getProject(req.currentUser.id, req.params.id);
+router.put('/:id', async (req: Request, res: Response) => {
+  const existing = await getProject(req.currentUser.id, String(req.params.id));
   if (!existing) { res.status(404).json({ error: 'Project not found' }); return; }
   const { input, error } = parseInput(req.body ?? {}, existing);
   if (!input) { res.status(400).json({ error }); return; }
-  res.json({ project: updateProject(req.currentUser.id, req.params.id, input) });
+  res.json({ project: await updateProject(req.currentUser.id, String(req.params.id), input) });
 });
 
-router.delete('/:id', (req: Request, res: Response) => {
-  if (!deleteProject(req.currentUser.id, req.params.id)) { res.status(404).json({ error: 'Project not found' }); return; }
+router.delete('/:id', async (req: Request, res: Response) => {
+  if (!(await deleteProject(req.currentUser.id, String(req.params.id)))) { res.status(404).json({ error: 'Project not found' }); return; }
   res.json({ ok: true });
 });
 
-router.post('/:id/estimate', (req: Request, res: Response) => {
-  const project = getProject(req.currentUser.id, req.params.id);
+router.post('/:id/estimate', async (req: Request, res: Response) => {
+  const project = await getProject(req.currentUser.id, String(req.params.id));
   if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
   const preset = getPreset(project.presetId);
   if (!preset) { res.status(400).json({ error: 'Project has an unknown preset' }); return; }
   const options = (req.body?.options as EstimateOptions) ?? project.estimateOptions;
-  const estimate = computeEstimate(project, preset, getSettings(req.currentUser.id), options);
+  const estimate = computeEstimate(project, preset, await getSettings(req.currentUser.id), options);
   res.json({ estimate, preset });
 });
 

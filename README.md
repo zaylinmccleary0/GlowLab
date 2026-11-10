@@ -8,7 +8,7 @@ Four packages, one product, modeled on the ParLab / MealPrep builds:
 | Package | What it is | Run / build |
 |---|---|---|
 | `glowlab-shared` | Shared TypeScript: types, 7 presets, geometry (calibration math), bulb placement, pricing | `npm install && npm run build && npm test` |
-| `glowlab-server` | API: single-business auth, projects, presets, pricing settings, server-side estimates (Express + SQLite + JWT) | `npm install && npm run build && npm start` |
+| `glowlab-server` | API: single-business auth, projects, presets, pricing settings, server-side estimates (Express + Turso/libSQL + JWT) | `npm install && npm run build && npm start` |
 | `glowlab-web` | Web app: photo Designer with glowing preset rendering, estimate panel, printable quote (served by the server) | `npm install && npm run build` |
 | `glowlab-mobile` | Phone app (Expo / React Native), same API | `npx expo start` |
 
@@ -61,11 +61,10 @@ timer **$45**. Deposit = 50% of total.
 ## Quick start (local)
 
 ```bash
-cd glowlab-shared && npm install && npm run build && npm test
-cd ../glowlab-server && npm install && npm run build
-cd ../glowlab-web && npm install && npm run build   # dist/ is served by the server
-cd ../glowlab-server && cp .env.example .env        # set JWT_SECRET
-npm start                                            # API + web app on http://localhost:4200
+npm install          # shared, server and web are one npm workspace
+npm run build        # shared -> web -> server; web dist/ is served by the server
+npm test             # shared tests
+npm start            # API + web app on http://localhost:4200
 ```
 
 Open http://localhost:4200 → **Create account** → create a project → upload a
@@ -80,18 +79,17 @@ node smoke-test.mjs                                                             
 
 ## Deploying
 
-- **Web + API:** one small VPS (~$5–6/mo). Build shared, server, and web;
-  copy `.env` with a real `JWT_SECRET`; run the server behind Caddy/Nginx with
-  HTTPS. SQLite is the built-in database — the file lives at
-  `glowlab-server/data/glowlab.db` (override with `DATABASE_PATH`). Back up
-  that one file and you have everything.
+- **Web + API:** Vercel (static web app + one serverless function) with a Turso
+  database. See [DEPLOY.md](DEPLOY.md) for the steps and environment variables.
+  Locally, with no Turso variables set, the server uses a SQLite file at
+  `glowlab-server/data/glowlab.db` (override with `DATABASE_PATH`).
 - **Phone app:** `npx expo start` to test in Expo Go, then EAS Build
   (`eas build --platform ios`) and `eas submit`. Requires Apple Developer
   enrollment ($99/yr). Point `EXPO_PUBLIC_API_URL` at your server URL.
 
 ## Launch checklist
 
-- [ ] Pick a host and deploy the server (HTTPS + real `JWT_SECRET` in `.env`)
+- [ ] Deploy to Vercel + Turso (see DEPLOY.md) with a real `JWT_SECRET`
 - [ ] Register your business account on the production server
 - [ ] Set your real $/ft rate and add-on prices in Settings before quoting
 - [ ] Set `EXPO_PUBLIC_API_URL` to the production server for mobile builds
@@ -104,11 +102,11 @@ node smoke-test.mjs                                                             
 - **Manual tracing only — no AI auto-detect.** You tap the roofline yourself;
   it's ~30 seconds on site and accurate at any angle, but auto-detection is
   the obvious v2.
-- **Photos are stored as data URLs in SQLite.** Simple and portable, but very
-  large photos make the DB heavy; the web upload keeps the original file, so
-  downscale huge shots before uploading. Object storage is a v2 move.
-- **No Stripe billing** — this is a single-business tool, not a SaaS. Accounts
-  are per-install; don't expose one server to multiple competing businesses.
+- **Photos are stored as data URLs in the database.** Simple and portable; the web
+  app shrinks uploads to 1600px and the API caps requests at 4 MB (Vercel's limit
+  is 4.5 MB). Object storage is a v2 move.
+- **No Stripe billing** — this is a single-business tool, not a SaaS. Anyone
+  who finds the URL can create an account (each sees only their own projects).
 - **One calibration segment per project.** Re-calibrating replaces it. Photos
   taken at an angle still carry perspective error — shoot straight-on from
   the street for the tightest footage.

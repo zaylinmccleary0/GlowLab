@@ -63,9 +63,11 @@ export default function DesignerScreen() {
   const pickPhoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { setError('Photo library permission was not granted.'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, base64: true });
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.35, base64: true });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
+    // The API (Vercel) rejects requests over 4.5 MB; leave headroom for the rest of the project.
+    if (asset.base64 && asset.base64.length > 3_500_000) { setError('That photo is too large. Try a smaller one or a screenshot of it.'); return; }
     const w = asset.width || Math.round(stageSize.w) || 1000;
     const h = asset.height || Math.round(stageSize.h) || 600;
     updateCurrent({

@@ -26,6 +26,11 @@ export default function ProjectsView({ settings, onOpen }: { settings: PricingSe
   };
 
   const del = async (id: string) => { await api.deleteProject(id); load(); };
+  // The list has no photos (keeps it small), so load the full project before opening it.
+  const open = async (id: string) => {
+    try { const { project } = await api.getProject(id); onOpen(project); }
+    catch (err) { setError((err as Error).message); }
+  };
 
   return (
     <div>
@@ -49,7 +54,7 @@ export default function ProjectsView({ settings, onOpen }: { settings: PricingSe
               <span className="muted small">{p.address || 'No address'}</span>
               <span className="badge">{preset?.name ?? p.presetId}</span>
               <span className="muted small">{p.lines.length} line(s){est ? ` • ${est.totalFeet} ft • ${money(est.total)}` : ''}</span>
-              <button className="primary" onClick={() => onOpen(p)}>Open designer</button>
+              <button className="primary" onClick={() => open(p.id)}>Open designer</button>
             </div>
           );
         })}

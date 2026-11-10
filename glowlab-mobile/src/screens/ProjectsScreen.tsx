@@ -27,6 +27,12 @@ export default function ProjectsScreen({ navigation }: { navigation: { navigate:
     } catch (e) { setError((e as Error).message); }
   };
 
+  // The list has no photos (keeps it small), so load the full project before opening it.
+  const open = async (id: string) => {
+    try { const { project } = await api.getProject(id); setCurrent(project); navigation.navigate('Designer'); }
+    catch (e) { setError((e as Error).message); }
+  };
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <Text style={styles.h1}>Projects</Text>
@@ -42,7 +48,7 @@ export default function ProjectsScreen({ navigation }: { navigation: { navigate:
         const preset = getPreset(p.presetId);
         const est = preset ? computeEstimate(p, preset, settings, p.estimateOptions) : null;
         return (
-          <TouchableOpacity key={p.id} style={styles.card} onPress={() => { setCurrent(p); navigation.navigate('Designer'); }}>
+          <TouchableOpacity key={p.id} style={styles.card} onPress={() => open(p.id)}>
             <Text style={styles.cardTitle}>{p.clientName}</Text>
             <Text style={styles.muted}>{p.address || 'No address'}</Text>
             <View style={styles.row}><Text style={styles.badge}>{preset?.name ?? p.presetId}</Text></View>

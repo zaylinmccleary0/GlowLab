@@ -27,7 +27,9 @@ export const api = {
     request<AuthResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   me: () => request<{ user: PublicUser }>('/api/me'),
   presets: () => request<{ presets: Preset[]; total: number }>('/api/presets'),
+  /** Projects without photos (photoDataUrl is null); use getProject for the full one. */
   listProjects: () => request<{ projects: Project[] }>('/api/projects'),
+  getProject: (id: string) => request<{ project: Project }>(`/api/projects/${id}`),
   createProject: (input: ProjectInput) => request<{ project: Project }>('/api/projects', { method: 'POST', body: JSON.stringify(input) }),
   updateProject: (id: string, input: ProjectInput) => request<{ project: Project }>(`/api/projects/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
   deleteProject: (id: string) => request<{ ok: true }>(`/api/projects/${id}`, { method: 'DELETE' }),

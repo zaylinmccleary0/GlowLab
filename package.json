@@ -1,0 +1,19 @@
+{
+  "name": "glowlab",
+  "private": true,
+  "description": "GlowLab: holiday exterior lighting estimates (shared model, API server, web app).",
+  "workspaces": [
+    "glowlab-shared",
+    "glowlab-server",
+    "glowlab-web"
+  ],
+  "scripts": {
+    "build": "npm run build -w @glowlab/shared && npm run build -w glowlab-web && npm run build -w @glowlab/server",
+    "test": "npm test -w @glowlab/shared",
+    "start": "npm start -w @glowlab/server",
+    "dev:web": "npm run dev -w glowlab-web"
+  },
+  "engines": {
+    "node": "22.x || 24.x"
+  }
+}

@@ -24,12 +24,12 @@ router.post('/register', async (req: Request, res: Response) => {
     return;
   }
   const normalized = email.toLowerCase();
-  if (getUserByEmail(normalized)) {
+  if (await getUserByEmail(normalized)) {
     res.status(409).json({ error: 'An account with that email already exists' });
     return;
   }
   const hash = await bcrypt.hash(password, 10);
-  const user = createUser(name.trim(), normalized, hash);
+  const user = await createUser(name.trim(), normalized, hash);
   res.status(201).json({ token: signToken(user.id), user: toPublicUser(user) });
 });
 
@@ -39,7 +39,7 @@ router.post('/login', async (req: Request, res: Response) => {
     res.status(400).json({ error: 'Email and password are required' });
     return;
   }
-  const user = getUserByEmail(email.toLowerCase());
+  const user = await getUserByEmail(email.toLowerCase());
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     res.status(401).json({ error: 'Wrong email or password' });
     return;
