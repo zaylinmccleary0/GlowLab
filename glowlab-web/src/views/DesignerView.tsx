@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { EstimateOptions, InstallType, LineKind, Point, Preset, PricingSettings, Project, TracedLine } from '@glowlab/shared';
 import {
-  COOL_WHITE, INSTALL_TYPE_LABELS, bulbDrawSize, bulbPositions, calibrationPixelsPerFoot, computeEstimate, lineLengthsFeet, money,
+  COOL_WHITE, INSTALL_TYPE_LABELS, PAINT_COLORS, bulbColorFor, bulbDrawSize, bulbPositions, nearestBulb, calibrationPixelsPerFoot, computeEstimate, lineLengthsFeet, money,
   normalizeEstimateOptions, polylineLengthFeet, profileFor, rateCardFor, totalFeet,
 } from '@glowlab/shared';
 import { api, type ProjectInput } from '../api';
@@ -57,9 +57,13 @@ export function HouseStage({ project, preset, spacingInches, installType, night,
   // Bulbs are sized in real inches from the calibration, so they're to scale with the house.
   const sz = ppf ? bulbDrawSize(ppf, W, installType) : null;
   const permanent = installType === 'permanent';
-  const colors = Array.from(new Set([...preset.bulbColors, ICICLE_COLOR]));
+  const painted = preset.customizableBulbs ? project.lines.flatMap((l) => Object.values(l.bulbColors ?? {})) : [];
+  const colors = Array.from(new Set([...preset.bulbColors, ICICLE_COLOR, ...painted]));
   const gradId = (c: string) => `glow-${uid}-${colors.indexOf(c)}`;
   const glowOpacity = night ? 1 : 0.45;
+  // Night: the photo is darkened to dusk with a blue sky tint, and each bulb throws a faint
+  // wide pool of light onto the house so the lights read as the brightest thing in the scene.
+  const photoFilter = night ? 'brightness(.42) contrast(1.08) saturate(.8)' : 'none';
 
   const handleClick = (e: React.MouseEvent) => {
     if (!interactive || !onTap || !ref.current) return;
@@ -71,8 +75,9 @@ export function HouseStage({ project, preset, spacingInches, installType, night,
   return (
     <div ref={ref} className="stage" style={{ aspectRatio: `${W} / ${H}` }} onClick={handleClick}>
       {project.photoDataUrl
-        ? <img src={project.photoDataUrl} alt="House" className="stage-photo" style={{ filter: night ? 'brightness(.55) saturate(1.1)' : 'none' }} />
-        : <div className="stage-photo" style={{ filter: night ? 'brightness(.55) saturate(1.1)' : 'none' }}><DemoHouse /></div>}
+        ? <img src={project.photoDataUrl} alt="House" className="stage-photo" style={{ filter: photoFilter }} />
+        : <div className="stage-photo" style={{ filter: photoFilter }}><DemoHouse /></div>}
+      {night && <div className="night-tint" aria-hidden="true" />}
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="stage-overlay">
         <defs>
           {colors.map((c) => (
@@ -112,11 +117,13 @@ export function HouseStage({ project, preset, spacingInches, installType, night,
               <polyline fill="none" points={pts(line)} strokeLinecap="round" strokeLinejoin="round"
                 stroke={permanent ? '#3a3a3a' : '#1d3b22'} strokeWidth={sz.wire} opacity={night ? 0.6 : 0.9} />
               {bulbs.map((b) => {
-                const color = preset.bulbColors[b.index % preset.bulbColors.length];
+                const color = bulbColorFor(preset, line, b.index);
                 const x = b.point.x * W; const y = b.point.y * H;
+                const spill = night && <circle cx={x} cy={y} r={sz.glowR * 3.2} fill={`url(#${gradId(color)})`} opacity={0.22} />;
                 if (permanent) {
                   return (
                     <g key={b.index}>
+                      {spill}
                       <circle cx={x} cy={y} r={sz.glowR} fill={`url(#${gradId(color)})`} opacity={glowOpacity} />
                       <circle cx={x} cy={y} r={sz.rx} fill={color} stroke="#0006" strokeWidth={sz.rx * 0.25} />
                     </g>
@@ -130,6 +137,7 @@ export function HouseStage({ project, preset, spacingInches, installType, night,
                 const rot = (Math.atan2(ny, nx) * 180) / Math.PI + 90;
                 return (
                   <g key={b.index}>
+                    {spill}
                     <circle cx={cx} cy={cy} r={sz.glowR} fill={`url(#${gradId(color)})`} opacity={glowOpacity} />
                     <ellipse cx={cx} cy={cy} rx={sz.rx} ry={sz.ry} fill={color} transform={`rotate(${rot} ${cx} ${cy})`} />
                     <ellipse cx={cx} cy={cy} rx={sz.rx * 0.45} ry={sz.ry * 0.5} fill="#fff" opacity={0.55} transform={`rotate(${rot} ${cx} ${cy})`} />
@@ -152,7 +160,8 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
   // going back to Projects saves first so nothing (like a new photo) is lost.
   const [dirty, setDirty] = useState(false);
   const setProject = (p: Project | ((prev: Project) => Project)) => { setProjectState(p); setDirty(true); };
-  const [mode, setMode] = useState<'trace' | 'calibrate'>('trace');
+  const [mode, setMode] = useState<'trace' | 'calibrate' | 'paint'>('trace');
+  const [paintColor, setPaintColor] = useState(PAINT_COLORS[2].color);
   const [kind, setKind] = useState<LineKind>('roofline');
   const [current, setCurrent] = useState<Point[]>([]);
   const [calPoints, setCalPoints] = useState<Point[]>([]);
@@ -179,8 +188,38 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
   const setAddOn = (key: keyof EstimateOptions['addOns'], delta: number) =>
     setOptions({ addOns: { ...opts.addOns, [key]: Math.max(0, opts.addOns[key] + delta) } });
 
+  const canPaint = Boolean(preset?.customizableBulbs);
+  const activeMode = mode === 'paint' && !canPaint ? 'trace' : mode;
+  // Paint: recolor the bulb nearest the tap. Picking the design's own color clears the paint.
+  const paintAt = (p: Point) => {
+    const hit = nearestBulb(project, preset, profile.bulbSpacingInches, p);
+    if (!hit) return;
+    setProject({
+      ...project,
+      lines: project.lines.map((l) => {
+        if (l.id !== hit.lineId) return l;
+        const next = { ...(l.bulbColors ?? {}) };
+        if (paintColor === preset.bulbColors[hit.index % preset.bulbColors.length]) delete next[String(hit.index)];
+        else next[String(hit.index)] = paintColor;
+        return { ...l, bulbColors: next };
+      }),
+    });
+  };
+  const paintAll = (color: string | null) => setProject({
+    ...project,
+    lines: project.lines.map((l) => {
+      if (!preset.appliesTo.includes(l.kind)) return l;
+      if (color === null) return { ...l, bulbColors: {} };
+      const all: Record<string, string> = {};
+      for (const b of bulbPositions(l, project.calibration, size, profile.bulbSpacingInches)) all[String(b.index)] = color;
+      return { ...l, bulbColors: all };
+    }),
+  });
+  const paintedCount = canPaint ? project.lines.reduce((n, l) => n + Object.keys(l.bulbColors ?? {}).length, 0) : 0;
+
   const onTap = (p: Point) => {
-    if (mode === 'calibrate') {
+    if (activeMode === 'paint') { paintAt(p); return; }
+    if (activeMode === 'calibrate') {
       const pts = [...calPoints, p].slice(-2);
       setCalPoints(pts);
       if (pts.length === 2) setProject({ ...project, calibration: { a: pts[0], b: pts[1], realFeet: project.calibration?.realFeet ?? 3 } });
@@ -288,10 +327,25 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
 
           <div className="toolbar no-print" style={{ marginTop: 12 }}>
             <div className="chips">
-              <button className={mode === 'trace' ? 'chip active' : 'chip'} onClick={() => setMode('trace')}>Trace</button>
-              <button className={mode === 'calibrate' ? 'chip active' : 'chip'} onClick={() => setMode('calibrate')}>Calibrate</button>
+              <button className={activeMode === 'trace' ? 'chip active' : 'chip'} onClick={() => setMode('trace')}>Trace</button>
+              <button className={activeMode === 'calibrate' ? 'chip active' : 'chip'} onClick={() => setMode('calibrate')}>Calibrate</button>
+              {canPaint && <button className={activeMode === 'paint' ? 'chip active' : 'chip'} onClick={() => { setCurrent([]); setMode('paint'); }}>Paint bulbs</button>}
             </div>
-            {mode === 'trace' ? (
+            {activeMode === 'paint' ? (
+              <>
+                <span className="small muted">Pick a color, then click any bulb:</span>
+                <div className="swatches" role="radiogroup" aria-label="Bulb color">
+                  {PAINT_COLORS.map((c) => (
+                    <button key={c.color} role="radio" aria-checked={paintColor === c.color} title={c.name} aria-label={c.name}
+                      className={paintColor === c.color ? 'swatch-btn active' : 'swatch-btn'} style={{ background: c.color }}
+                      onClick={() => setPaintColor(c.color)} />
+                  ))}
+                </div>
+                <button onClick={() => paintAll(paintColor)} disabled={!project.calibration}>Fill all</button>
+                <button onClick={() => paintAll(null)} disabled={!paintedCount}>Reset to warm white</button>
+                {!project.calibration && <span className="small error">Calibrate first so bulbs can be placed.</span>}
+              </>
+            ) : activeMode === 'trace' ? (
               <>
                 <select value={kind} onChange={(e) => setKind(e.target.value as LineKind)} aria-label="Line kind">
                   {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}

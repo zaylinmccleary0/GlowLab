@@ -2,10 +2,10 @@
 import assert from 'node:assert';
 import {
   PRESETS, DEFAULT_PRICING, getPreset, calibrationPixelsPerFoot, polylineLengthFeet,
-  bulbPositions, computeEstimate, totalFeet, normalizeEstimateOptions, bulbDrawSize, newPricingProfile, validatePricingSettings,
+  bulbPositions, computeEstimate, totalFeet, normalizeEstimateOptions, bulbDrawSize, newPricingProfile, validatePricingSettings, bulbColorFor, nearestBulb,
 } from '../dist/index.js';
 
-assert.equal(PRESETS.length, 7);
+assert.equal(PRESETS.length, 8);
 assert.equal(getPreset('candy-cane').bulbColors.length, 2);
 assert.equal(getPreset('multicolor-nostalgia').bulbColors.length, 5);
 assert.equal(getPreset('icicles-roofline').icicle, true);
@@ -124,5 +124,18 @@ assert.ok(Math.abs(close.rx - 6) < 1e-9 && Math.abs(close.ry - 12) < 1e-9);
 const project2 = { ...project, lines: [line, { id: 'l2', kind: 'window', points: [{ x: 0, y: 0 }, { x: 0.2, y: 0 }] }] };
 assert.equal(totalFeet(project2, classic), 50);
 assert.equal(totalFeet(project2), 70);
+
+// Mistletoe: warm white, and only it lets single bulbs be recolored
+const mistletoe = getPreset('mistletoe');
+assert.equal(mistletoe.customizableBulbs, true);
+assert.deepEqual(mistletoe.bulbColors, ['#FFD9A0']);
+const painted = { ...line, bulbColors: { 3: '#2E7DFF' } };
+assert.equal(bulbColorFor(mistletoe, painted, 3), '#2E7DFF');
+assert.equal(bulbColorFor(mistletoe, painted, 4), '#FFD9A0');
+assert.equal(bulbColorFor(getPreset('candy-cane'), painted, 3), '#FFD9A0'); // other presets ignore paint (odd index = white)
+// Tapping finds the nearest bulb: 10 px/ft, 15" spacing => bulb 3 at 3 x 12.5px = x 37.5px (0.0375)
+assert.deepEqual(nearestBulb(project, mistletoe, 15, { x: 0.038, y: 0.002 }), { lineId: 'l1', index: 3 });
+assert.equal(nearestBulb(project, mistletoe, 15, { x: 0.3, y: 0.5 }), null); // far from any bulb
+assert.equal(nearestBulb({ ...project, calibration: null }, mistletoe, 15, { x: 0.038, y: 0 }), null);
 
 console.log('shared tests: all passed');

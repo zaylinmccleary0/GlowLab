@@ -16,6 +16,14 @@ function parseInput(body: Record<string, unknown>, existing?: Project): { input?
   for (const l of lines) {
     if (!l || typeof l.id !== 'string' || !LINE_KINDS.includes(l.kind) || !Array.isArray(l.points)) return { error: 'Each line needs id, a valid kind, and points[]' };
     for (const p of l.points) if (typeof p?.x !== 'number' || typeof p?.y !== 'number') return { error: 'Line points need numeric x/y' };
+    if (l.bulbColors !== undefined) {
+      if (!l.bulbColors || typeof l.bulbColors !== 'object' || Array.isArray(l.bulbColors)) return { error: 'bulbColors must be an object' };
+      const entries = Object.entries(l.bulbColors);
+      if (entries.length > 5000) return { error: 'Too many painted bulbs on one line' };
+      for (const [k, v] of entries) {
+        if (!/^\d{1,5}$/.test(k) || typeof v !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(v)) return { error: 'bulbColors needs bulb numbers mapped to colors like #FF2D2D' };
+      }
+    }
   }
   const calibration = (body.calibration as Project['calibration']) ?? existing?.calibration ?? null;
   if (calibration !== null) {

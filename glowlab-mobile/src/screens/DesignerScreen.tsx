@@ -3,7 +3,7 @@ import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import type { LineKind, Point } from '@glowlab/shared';
-import { lineLengthsFeet, normalizeEstimateOptions, polylineLengthFeet, profileFor, totalFeet } from '@glowlab/shared';
+import { PAINT_COLORS, bulbPositions, lineLengthsFeet, nearestBulb, normalizeEstimateOptions, polylineLengthFeet, profileFor, totalFeet } from '@glowlab/shared';
 import Stage from '../Stage';
 import { useWorkspace } from '../workspace';
 import { colors, styles } from '../theme';
@@ -20,7 +20,8 @@ let uid = 0;
  */
 export default function DesignerScreen() {
   const { current, presets, settings, updateCurrent, saveCurrent } = useWorkspace();
-  const [mode, setMode] = useState<'trace' | 'calibrate'>('trace');
+  const [mode, setMode] = useState<'trace' | 'calibrate' | 'paint'>('trace');
+  const [paintColor, setPaintColor] = useState(PAINT_COLORS[2].color);
   const [kind, setKind] = useState<LineKind>('roofline');
   const [currentPts, setCurrentPts] = useState<Point[]>([]);
   const [calPts, setCalPts] = useState<Point[]>([]);
@@ -50,8 +51,41 @@ export default function DesignerScreen() {
   const opts = normalizeEstimateOptions(project.estimateOptions);
   const spacingInches = profileFor(settings, opts).bulbSpacingInches;
 
+  const canPaint = Boolean(preset?.customizableBulbs);
+  const activeMode = mode === 'paint' && !canPaint ? 'trace' : mode;
+  // Paint (Mistletoe): recolor the bulb nearest the tap. Picking the design's own color clears the paint.
+  const paintAt = (p: Point) => {
+    if (!preset) return;
+    const hit = nearestBulb(project, preset, spacingInches, p);
+    if (!hit) return;
+    updateCurrent({
+      ...project,
+      lines: project.lines.map((l) => {
+        if (l.id !== hit.lineId) return l;
+        const next = { ...(l.bulbColors ?? {}) };
+        if (paintColor === preset.bulbColors[hit.index % preset.bulbColors.length]) delete next[String(hit.index)];
+        else next[String(hit.index)] = paintColor;
+        return { ...l, bulbColors: next };
+      }),
+    });
+  };
+  const paintAll = (color: string | null) => {
+    if (!preset) return;
+    updateCurrent({
+      ...project,
+      lines: project.lines.map((l) => {
+        if (!preset.appliesTo.includes(l.kind)) return l;
+        if (color === null) return { ...l, bulbColors: {} };
+        const all: Record<string, string> = {};
+        for (const b of bulbPositions(l, project.calibration, size, spacingInches)) all[String(b.index)] = color;
+        return { ...l, bulbColors: all };
+      }),
+    });
+  };
+
   const onTap = (p: Point) => {
-    if (mode === 'calibrate') {
+    if (activeMode === 'paint') { paintAt(p); return; }
+    if (activeMode === 'calibrate') {
       const pts = [...calPts, p].slice(-2);
       setCalPts(pts);
       if (pts.length === 2) updateCurrent({ ...project, calibration: { a: pts[0], b: pts[1], realFeet: project.calibration?.realFeet ?? 3 } });
@@ -116,16 +150,30 @@ export default function DesignerScreen() {
         <Stage project={project} preset={preset} spacingInches={spacingInches} installType={opts.installType} night={night}
           guides extraLines={currentPts.length ? [{ id: 'cur', kind, points: currentPts }] : undefined} onTap={onTap} />
       )}
-      <Text style={styles.muted}>Tap the photo to add points. Total for this preset: {feet.toFixed(1)} ft{currentPts.length ? ` • current line ${polylineLengthFeet(currentPts, project.calibration, size).toFixed(1)} ft` : ''}</Text>
+      <Text style={styles.muted}>{activeMode === 'paint' ? 'Tap a bulb to paint it.' : 'Tap the photo to add points.'} Total for this preset: {feet.toFixed(1)} ft{currentPts.length ? ` • current line ${polylineLengthFeet(currentPts, project.calibration, size).toFixed(1)} ft` : ''}</Text>
 
       <View style={styles.row}>
-        {(['trace', 'calibrate'] as const).map((m) => (
-          <TouchableOpacity key={m} style={[styles.chip, mode === m && styles.chipActive]} onPress={() => setMode(m)}>
-            <Text style={mode === m ? styles.chipTextActive : styles.chipText}>{m === 'trace' ? 'Trace' : 'Calibrate'}</Text>
+        {(canPaint ? ['trace', 'calibrate', 'paint'] as const : ['trace', 'calibrate'] as const).map((m) => (
+          <TouchableOpacity key={m} style={[styles.chip, activeMode === m && styles.chipActive]} onPress={() => { if (m === 'paint') setCurrentPts([]); setMode(m); }}>
+            <Text style={activeMode === m ? styles.chipTextActive : styles.chipText}>{m === 'trace' ? 'Trace' : m === 'calibrate' ? 'Calibrate' : 'Paint bulbs'}</Text>
           </TouchableOpacity>
         ))}
       </View>
-      {mode === 'trace' ? (
+      {activeMode === 'paint' ? (
+        <>
+          <View style={styles.row}>
+            {PAINT_COLORS.map((c) => (
+              <TouchableOpacity key={c.color} accessibilityLabel={c.name} onPress={() => setPaintColor(c.color)}
+                style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: c.color, borderWidth: paintColor === c.color ? 3 : 1, borderColor: paintColor === c.color ? colors.gold : colors.line }} />
+            ))}
+          </View>
+          <View style={styles.row}>
+            <TouchableOpacity style={styles.buttonGhost} onPress={() => paintAll(paintColor)}><Text style={styles.buttonGhostText}>Fill all</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.buttonGhost} onPress={() => paintAll(null)}><Text style={styles.buttonGhostText}>Reset to warm white</Text></TouchableOpacity>
+          </View>
+          {!project.calibration && <Text style={styles.error}>Calibrate first so bulbs can be placed.</Text>}
+        </>
+      ) : activeMode === 'trace' ? (
         <>
           <View style={styles.row}>
             {KINDS.map((k) => (

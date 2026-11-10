@@ -1,7 +1,11 @@
 export interface Point { x: number; y: number; } // normalized 0..1 per axis
 export interface ImageSize { width: number; height: number; }
 export type LineKind = 'roofline' | 'ridge' | 'gutter' | 'window' | 'door' | 'pathway' | 'tree' | 'outline';
-export interface TracedLine { id: string; kind: LineKind; points: Point[]; }
+export interface TracedLine {
+  id: string; kind: LineKind; points: Point[];
+  /** Per-bulb color picks, keyed by bulb index along the line (only used by presets with customizableBulbs). */
+  bulbColors?: Record<string, string>;
+}
 export interface Calibration { a: Point; b: Point; realFeet: number; }
 export type BulbSize = 'C9' | 'C7' | 'mini';
 export interface Preset {
@@ -9,6 +13,8 @@ export interface Preset {
   bulbColors: string[]; bulbSize: BulbSize;
   appliesTo: LineKind[]; icicle: boolean; icicleDropInches?: number;
   includesWreath?: boolean; includesPathway?: boolean;
+  /** When true, individual bulbs can be recolored in the designer (stored per line in bulbColors). */
+  customizableBulbs?: boolean;
 }
 /** Seasonal = strung each holiday season, then taken down. Permanent = year-round LED track. */
 export type InstallType = 'seasonal' | 'permanent';

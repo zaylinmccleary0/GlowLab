@@ -85,3 +85,27 @@ export function bulbPositions(
   }
   return out;
 }
+
+/**
+ * The bulb closest to a tapped point, for painting individual bulbs. Only lines the
+ * preset lights are considered. Returns null when nothing is within about one bulb
+ * spacing (or 3% of the image width, whichever is larger) of the tap.
+ */
+export function nearestBulb(
+  project: Pick<Project, 'lines' | 'calibration' | 'imageWidth' | 'imageHeight'>,
+  preset: Preset, spacingInches: number, tap: Point,
+): { lineId: string; index: number } | null {
+  const size: ImageSize = { width: project.imageWidth, height: project.imageHeight };
+  const ppf = calibrationPixelsPerFoot(project.calibration, size);
+  if (ppf === null) return null;
+  const maxDist = Math.max((spacingInches / 12) * ppf * 0.75, size.width * 0.03);
+  let best: { lineId: string; index: number; d: number } | null = null;
+  for (const line of project.lines) {
+    if (!preset.appliesTo.includes(line.kind)) continue;
+    for (const b of bulbPositions(line, project.calibration, size, spacingInches)) {
+      const d = segPx(b.point, tap, size);
+      if (d <= maxDist && (!best || d < best.d)) best = { lineId: line.id, index: b.index, d };
+    }
+  }
+  return best ? { lineId: best.lineId, index: best.index } : null;
+}

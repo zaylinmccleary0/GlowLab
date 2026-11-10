@@ -1,4 +1,4 @@
-import type { Preset, PricingProfile, PricingSettings, RateCard } from './types';
+import type { Preset, PricingProfile, PricingSettings, RateCard, TracedLine } from './types';
 
 export const WARM_WHITE = '#FFD9A0';
 export const COOL_WHITE = '#EAF4FF';
@@ -48,7 +48,32 @@ export const PRESETS: Preset[] = [
     bulbColors: [COOL_WHITE], bulbSize: 'C9',
     appliesTo: ['roofline', 'ridge', 'gutter', 'window', 'door', 'tree', 'outline'], icicle: false,
   },
+  {
+    id: 'mistletoe', name: 'Mistletoe',
+    description: 'Warm white C9s you can personalize — use Paint bulbs to change the color of any single bulb.',
+    bulbColors: [WARM_WHITE], bulbSize: 'C9',
+    appliesTo: ['roofline', 'ridge', 'gutter', 'window', 'door', 'outline'], icicle: false,
+    customizableBulbs: true,
+  },
 ];
+
+/** Colors offered by the Paint bulbs tool (Mistletoe). */
+export const PAINT_COLORS: { name: string; color: string }[] = [
+  { name: 'Warm white', color: WARM_WHITE },
+  { name: 'Cool white', color: COOL_WHITE },
+  { name: 'Red', color: RED },
+  { name: 'Green', color: '#2ECC71' },
+  { name: 'Blue', color: '#2E7DFF' },
+  { name: 'Gold', color: '#FFC93C' },
+  { name: 'Purple', color: '#A45CFF' },
+  { name: 'Pink', color: '#FF6FB5' },
+];
+
+/** The color a bulb is drawn in: a painted color (customizable presets only), else the preset's repeating pattern. */
+export function bulbColorFor(preset: Preset, line: TracedLine, index: number): string {
+  const painted = preset.customizableBulbs ? line.bulbColors?.[String(index)] : undefined;
+  return painted ?? preset.bulbColors[index % preset.bulbColors.length];
+}
 
 export function getPreset(id: string): Preset | undefined { return PRESETS.find((p) => p.id === id); }
 

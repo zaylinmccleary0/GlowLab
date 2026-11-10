@@ -34,8 +34,8 @@ check('login returns a token', typeof token, 'string');
 
 // 2. presets (7, from @glowlab/shared)
 const { presets, total } = await req('/api/presets', { token });
-check('preset count', total, 7);
-check('preset ids', presets.map((p) => p.id), ['classic-warm-white', 'full-roofline', 'multicolor-nostalgia', 'candy-cane', 'icicles-roofline', 'elegant-full-home', 'winter-white']);
+check('preset count', total, 8);
+check('preset ids', presets.map((p) => p.id), ['classic-warm-white', 'full-roofline', 'multicolor-nostalgia', 'candy-cane', 'icicles-roofline', 'elegant-full-home', 'winter-white', 'mistletoe']);
 check('candy cane pattern', presets.find((p) => p.id === 'candy-cane').bulbColors, ['#FF2D2D', '#FFD9A0']);
 
 // 3. settings: one default "Standard" price list on register, then PUT round-trips
@@ -103,6 +103,15 @@ check('a new photo without a new preview clears the old preview', swapped.thumbD
 const cleared = (await req(`/api/projects/${withPhoto.id}`, { method: 'PUT', token, body: { photoDataUrl: null } })).project;
 check('photo can be removed', [cleared.photoDataUrl, cleared.hasPhoto], [null, false]);
 await req(`/api/projects/${withPhoto.id}`, { method: 'DELETE', token });
+
+// 5c. Mistletoe painted bulbs are saved with the line; bad colors are rejected
+const paintedLine = { id: 'm1', kind: 'roofline', points: [{ x: 0, y: 0 }, { x: 0.5, y: 0 }], bulbColors: { 0: '#FF2D2D', 7: '#2E7DFF' } };
+const { project: mp } = await req('/api/projects', { method: 'POST', token, body: { ...project, clientName: 'Mistletoe House', presetId: 'mistletoe', lines: [paintedLine] } });
+check('painted bulbs saved', (await req(`/api/projects/${mp.id}`, { token })).project.lines[0].bulbColors, { 0: '#FF2D2D', 7: '#2E7DFF' });
+let badPaint = false;
+try { await req(`/api/projects/${mp.id}`, { method: 'PUT', token, body: { lines: [{ ...paintedLine, bulbColors: { 1: 'red; drop' } }] } }); } catch { badPaint = true; }
+check('bad bulb color rejected', badPaint, true);
+await req(`/api/projects/${mp.id}`, { method: 'DELETE', token });
 
 // 6. bad preset is rejected
 let rejected = false;
