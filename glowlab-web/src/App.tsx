@@ -6,8 +6,9 @@ import { api } from './api';
 import ProjectsView from './views/ProjectsView';
 import DesignerView from './views/DesignerView';
 import SettingsView from './views/SettingsView';
+import QuoteView from './views/QuoteView';
 
-type Tab = 'projects' | 'settings';
+type Tab = 'projects' | 'quotes' | 'settings';
 
 function AuthScreen() {
   const { login, register } = useAuth();
@@ -50,6 +51,7 @@ function Shell() {
   const { user, loading } = useAuth();
   const [tab, setTab] = useState<Tab>('projects');
   const [open, setOpen] = useState<Project | null>(null);
+  const [quoteProject, setQuoteProject] = useState<Project | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [settings, setSettings] = useState<PricingSettings | null>(null);
 
@@ -68,13 +70,20 @@ function Shell() {
         <span className="logo brand"><img src="/icon-192.png" alt="" className="brand-mark" />GlowLab</span>
         <nav>
           <button className={tab === 'projects' && !open ? 'nav active' : 'nav'} onClick={() => { setTab('projects'); setOpen(null); }}>Projects</button>
+          <button className={tab === 'quotes' ? 'nav active' : 'nav'} onClick={() => { setTab('quotes'); setOpen(null); }}>Quotes</button>
           <button className={tab === 'settings' ? 'nav active' : 'nav'} onClick={() => { setTab('settings'); setOpen(null); }}>Settings</button>
         </nav>
         <span className="muted small">{user.name}</span>
       </header>
       <main>
         {open && settings ? (
-          <DesignerView key={open.id} initial={open} presets={presets} settings={settings} onBack={() => setOpen(null)} />
+          <DesignerView key={open.id} initial={open} presets={presets} settings={settings} onBack={() => setOpen(null)}
+            onQuote={(p) => { setQuoteProject(p); setOpen(null); setTab('quotes'); window.scrollTo(0, 0); }} />
+        ) : tab === 'quotes' ? (
+          settings ? (
+            <QuoteView project={quoteProject} presets={presets} settings={settings} onPick={setQuoteProject}
+              onEdit={(p) => { setOpen(p); setTab('projects'); window.scrollTo(0, 0); }} />
+          ) : <p className="muted">Loading…</p>
         ) : tab === 'projects' ? (
           <ProjectsView settings={settings} onOpen={setOpen} />
         ) : (

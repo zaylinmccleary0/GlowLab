@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import type { EstimateOptions, InstallType, LineKind, Point, Preset, PricingSettings, Project, TracedLine } from '@glowlab/shared';
 import {
   COOL_WHITE, INSTALL_TYPE_LABELS, PAINT_COLORS, bulbColorFor, bulbDrawSize, bulbPositions, nearestBulb, calibrationPixelsPerFoot, glowBands, glowOpacityAt, computeEstimate, lineLengthsFeet, money,
-  QUOTE_DISCLAIMER, normalizeEstimateOptions, polylineLengthFeet, profileFor, rateCardFor, totalFeet,
+  normalizeEstimateOptions, polylineLengthFeet, profileFor, rateCardFor, totalFeet,
 } from '@glowlab/shared';
 import { api, type ProjectInput } from '../api';
 import NumberField from '../NumberField';
@@ -192,8 +192,10 @@ export function HouseStage({ project, preset, spacingInches, installType, night,
   );
 }
 
-export default function DesignerView({ initial, presets, settings, onBack }: {
+export default function DesignerView({ initial, presets, settings, onBack, onQuote }: {
   initial: Project; presets: Preset[]; settings: PricingSettings; onBack: () => void;
+  /** Opens the Quote tab for this project (after saving it). */
+  onQuote: (p: Project) => void;
 }) {
   const [project, setProjectState] = useState<Project>(initial);
   // Unsaved changes: every edit goes through setProject, which marks the project dirty;
@@ -207,7 +209,6 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
   const [calPoints, setCalPoints] = useState<Point[]>([]);
   const [customFeet, setCustomFeet] = useState('3');
   const [night, setNight] = useState(true);
-  const [showQuote, setShowQuote] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -319,7 +320,7 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const save = async (): Promise<boolean> => {
+  const save = async (): Promise<Project | null> => {
     try {
       const input: ProjectInput = {
         clientName: project.clientName, address: project.address, photoDataUrl: project.photoDataUrl,
@@ -329,8 +330,16 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
       };
       const { project: savedProject } = await api.updateProject(project.id, input);
       setProjectState(savedProject); setDirty(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
-      return true;
-    } catch (err) { setError((err as Error).message); return false; }
+      return savedProject;
+    } catch (err) { setError((err as Error).message); return null; }
+  };
+
+  // Quote view: save first so the Quote tab shows exactly what's drawn here.
+  const hasEstimate = Boolean(estimate && estimate.totalFeet > 0);
+  const openQuote = async () => {
+    if (!dirty) { onQuote(project); return; }
+    const savedProject = await save();
+    if (savedProject) onQuote(savedProject);
   };
 
   const goBack = async () => {
@@ -347,7 +356,8 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
         <input className="inline-input" value={project.clientName} onChange={(e) => setProject({ ...project, clientName: e.target.value })} aria-label="Client name" />
         <input className="inline-input wide" value={project.address} onChange={(e) => setProject({ ...project, address: e.target.value })} placeholder="Address" aria-label="Address" />
         <button className="primary" onClick={() => { void save(); }}>{saved ? 'Saved ✓' : dirty ? 'Save project •' : 'Save project'}</button>
-        <button onClick={() => setShowQuote(!showQuote)}>{showQuote ? 'Hide quote' : 'Quote view'}</button>
+        <button onClick={() => { void openQuote(); }} disabled={!hasEstimate}
+          title={hasEstimate ? 'Saves, then opens the Quote tab' : 'Trace and calibrate the lights first'}>Quote view →</button>
       </div>
       {error && <p className="error">{error}</p>}
 
@@ -475,27 +485,6 @@ export default function DesignerView({ initial, presets, settings, onBack }: {
         </aside>
       </div>
 
-      {showQuote && estimate && (
-        <section className="quote">
-          <h2 className="brand"><img src="/icon-192.png" alt="" className="brand-mark" />GlowLab — Holiday Lighting Estimate</h2>
-          <p><strong>{project.clientName}</strong>{project.address ? ` — ${project.address}` : ''}<br />
-            Design: <strong>{preset.name}</strong> — {INSTALL_TYPE_LABELS[opts.installType]} ({opts.installType === 'permanent' ? 'permanent LED' : preset.bulbSize}, {profile.bulbSpacingInches}&quot; spacing)</p>
-          <HouseStage project={project} preset={preset} spacingInches={profile.bulbSpacingInches} installType={opts.installType} night={night} />
-          <table className="estimate-table"><tbody>
-            {estimate.lines.map((l, i) => <tr key={i}><td>{l.label}<br /><span className="muted small">{l.detail}</span></td><td className="num">{money(l.amount)}</td></tr>)}
-          </tbody></table>
-          <p>{estimate.totalFeet} ft of lighting • {estimate.bulbCount} bulbs • {estimate.clipCount} clips</p>
-          <p className="total-row"><span>Total</span><span>{money(estimate.total)}</span></p>
-          <p className="total-row deposit"><span>Deposit due to book (50%)</span><span>{money(estimate.depositDue)}</span></p>
-          <p className="muted small">{opts.installType === 'permanent'
-            ? 'Permanent lighting is installed once and stays up year-round.'
-            : rateCardFor(settings, opts).takedownReinstallFee > 0
-              ? 'Seasonal lighting is hung for the holidays; takedown / reinstall is listed above.'
-              : 'Seasonal lighting includes installation and takedown after the holidays.'} Estimate based on the traced design above; final footage confirmed on install day.</p>
-          <p className="quote-disclaimer"><strong>Please note:</strong> {QUOTE_DISCLAIMER}</p>
-          <button className="primary no-print" onClick={() => window.print()}>Print quote</button>
-        </section>
-      )}
       <form hidden onSubmit={(e: FormEvent) => e.preventDefault()} />
     </div>
   );
