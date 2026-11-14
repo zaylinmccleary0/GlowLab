@@ -113,6 +113,7 @@ button.big { padding: 14px 18px; font-size: 17px; }
 .signed-sig { display: flex; flex-direction: column; gap: 4px; max-width: 420px; }
 .signature-img { width: 100%; max-height: 140px; object-fit: contain; object-position: left; border-bottom: 1.5px solid #1c2420; }
 .audit { margin-top: 6px; }
+.send-note { background: var(--card); border: 1px solid var(--line); padding: 10px 14px; border-radius: 10px; font-size: 14px; }
 .signed-banner { background: #173d24; border: 1px solid #2f6b43; color: #cdeed6; padding: 10px 14px; border-radius: 10px; font-weight: 600; }
 .badge.won { background: #1f5c34; color: #d4f5de; }
 .terms-input { width: 100%; font: inherit; font-size: 13px; line-height: 1.5; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg, #111); color: inherit; resize: vertical; box-sizing: border-box; }

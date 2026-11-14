@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { EstimateBreakdown, Preset, PricingSettings, Project } from '@glowlab/shared';
 import {
   INSTALL_TYPE_LABELS, computeEstimate, contractTermsFor, money, normalizeEstimateOptions, profileFor, round2,
@@ -7,6 +7,7 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import SignaturePad from '../SignaturePad';
 import { HouseStage } from './DesignerView';
+import { buildContractPdf, contractFileName, downloadBlob, snapshotStage } from '../contractPdf';
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
@@ -44,6 +45,56 @@ export default function ContractView({ project, presets, settings, onSigned, onB
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const signed = project.status === 'won' && project.contract ? project.contract : null;
+  const sectionRef = useRef<HTMLElement>(null);
+  const [pdf, setPdf] = useState<Blob | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [sendNote, setSendNote] = useState<string | null>(null);
+
+  // Signed contracts: build the PDF in the background as soon as the page shows, so
+  // Send/Download respond instantly (phones only allow sharing right after a tap).
+  useEffect(() => {
+    if (!signed) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const photo = sectionRef.current?.querySelector('img.stage-photo') as HTMLImageElement | null;
+        if (photo && !photo.complete) await new Promise((r) => { photo.onload = r; photo.onerror = r; });
+        const picture = await snapshotStage(sectionRef.current?.querySelector('.stage') as HTMLElement | null);
+        const blob = await buildContractPdf(signed, project.signatureDataUrl ?? null, picture);
+        if (!cancelled) setPdf(blob);
+      } catch (e) { if (!cancelled) setPdfError(`Couldn't make the PDF: ${(e as Error).message}`); }
+    })();
+    return () => { cancelled = true; };
+  }, [signed, project.signatureDataUrl]);
+
+  const download = () => { if (pdf && signed) downloadBlob(pdf, contractFileName(signed)); };
+  const send = async () => {
+    if (!pdf || !signed) return;
+    setSendNote(null);
+    const name = contractFileName(signed);
+    const file = new File([pdf], name, { type: 'application/pdf' });
+    const message = `Hi ${signed.customerName}, here is your signed holiday lighting agreement with ${signed.businessName}. Total ${money(signed.estimate.total)}, deposit ${money(signed.estimate.depositDue)}. Thank you!`;
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+    if (nav.share && nav.canShare?.({ files: [file] })) {
+      try {
+        await nav.share({ files: [file], title: 'Signed lighting agreement', text: message });
+        setSendNote('Sent ✓');
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') setSendNote(`Couldn't open sharing: ${(e as Error).message}. Use Download PDF instead.`);
+      }
+      return;
+    }
+    // No share sheet here (most desktop browsers): download it and start an email to attach it to.
+    downloadBlob(pdf, name);
+    if (signed.customerEmail) {
+      const subject = encodeURIComponent(`Your signed lighting agreement — ${signed.businessName}`);
+      const body = encodeURIComponent(`${message}\n\n(The PDF is attached.)`);
+      window.location.href = `mailto:${encodeURIComponent(signed.customerEmail)}?subject=${subject}&body=${body}`;
+      setSendNote(`PDF downloaded and an email to ${signed.customerEmail} opened — attach "${name}" from your Downloads and send.`);
+    } else {
+      setSendNote(`PDF downloaded as "${name}". No email was given at signing, so attach it to a text or email to the customer.`);
+    }
+  };
 
   useEffect(() => {
     if (signed) return;
@@ -78,13 +129,17 @@ export default function ContractView({ project, presets, settings, onSigned, onB
     <div>
       <div className="toolbar no-print">
         <button onClick={onBack}>{signed ? '← All projects' : '← Back to quote'}</button>
-        {signed && <button className="primary" onClick={() => window.print()}>Print contract</button>}
+        {signed && <button className="primary" onClick={() => { void send(); }} disabled={!pdf}>{pdf ? 'Send to customer' : 'Preparing PDF…'}</button>}
+        {signed && <button onClick={download} disabled={!pdf}>Download PDF</button>}
+        {signed && <button onClick={() => window.print()}>Print</button>}
         {signed && <button className="danger" onClick={() => { void voidIt(); }}>Void contract</button>}
       </div>
       {signed && <p className="signed-banner no-print">✓ Signed by {signed.customerName} on {fmtDate(signed.signedAt)} at {fmtTime(signed.signedAt)}</p>}
+      {sendNote && <p className="send-note no-print">{sendNote}</p>}
+      {pdfError && <p className="error no-print">{pdfError}</p>}
       {error && <p className="error no-print">{error}</p>}
 
-      <section className="quote contract">
+      <section className="quote contract" ref={sectionRef}>
         <h2 className="brand"><img src="/icon-192.png" alt="" className="brand-mark" />{businessName || 'GlowLab'}</h2>
         <h3 className="contract-title">Holiday Lighting Installation Agreement</h3>
         <p>
