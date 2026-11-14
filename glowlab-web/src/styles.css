@@ -149,10 +149,22 @@ button.big { padding: 14px 18px; font-size: 17px; }
 }
 button:disabled { opacity: .45; cursor: not-allowed; }
 
-/* "A new version is available" ribbon */
-.update-banner { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: calc(100% - 32px); max-width: 480px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--card); color: var(--ink); border: 1px solid var(--gold); border-radius: 12px; padding: 10px 12px 10px 16px; box-shadow: 0 8px 24px rgba(0,0,0,.45); z-index: 1000; font-size: 14px; font-weight: 600; }
-.update-banner button { flex: none; background: var(--gold); border-color: var(--gold); color: #231a05; font-weight: 700; padding: 8px 14px; border-radius: 10px; }
-@media print { .update-banner { display: none; } }
+/* Update pop-up */
+.update-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+  background: rgba(6, 9, 7, .62); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation: fade-in .2s ease both; }
+.update-card { width: 100%; max-width: 360px; background: var(--card); border: 1px solid var(--gold); border-radius: 20px; padding: 26px 22px 14px; text-align: center;
+  display: flex; flex-direction: column; align-items: stretch; gap: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, .55); animation: pop-in .28s cubic-bezier(.2, .9, .3, 1.2) both; }
+.update-card h3 { margin: 4px 0 0; font-size: 21px; }
+.update-card p { margin: 0 0 8px; color: var(--muted); font-size: 15px; }
+.update-mark { width: 60px; height: 60px; border-radius: 22%; align-self: center; }
+.update-card .link { color: var(--muted); }
+.update-toast { position: fixed; left: 50%; top: calc(14px + env(safe-area-inset-top)); z-index: 1000; transform: translateX(-50%); max-width: calc(100% - 32px);
+  background: #173d24; border: 1px solid #2f6b43; color: #cdeed6; padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .4); animation: toast-in 4s ease both; pointer-events: none; }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes pop-in { from { opacity: 0; transform: scale(.9) translateY(10px); } }
+@keyframes toast-in { 0% { opacity: 0; transform: translate(-50%, -12px); } 8%, 85% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -12px); } }
+@media print { .update-overlay, .update-toast { display: none; } }
 
 /* ================= App feel ================= */
 :root { color-scheme: dark; accent-color: var(--gold); }
@@ -227,7 +239,6 @@ button.step { width: 36px; height: 36px; padding: 0; border-radius: 50%; font-si
   .tabbar .nav-icon { display: block; width: 24px; height: 24px; transition: transform .2s ease; }
   .tabbar button.nav.active .nav-icon { transform: translateY(-2px) scale(1.06); stroke-width: 2.1; }
   .tabbar button.nav:active { transform: scale(.92); }
-  .update-banner { bottom: calc(80px + env(safe-area-inset-bottom)); }
 
   .designer-bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
   .designer-bar .back { grid-area: 1 / 1; }
