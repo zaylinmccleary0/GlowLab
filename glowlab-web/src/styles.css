@@ -93,6 +93,39 @@ div.stage-photo { object-fit: initial; }
 .sign-label { font-size: 12px; color: #6b7670; text-transform: uppercase; letter-spacing: .04em; }
 .sign-issued { margin: 22px 0 0; }
 @media (max-width: 560px) { .sign-grid { gap: 26px 16px; } }
+/* Contracts */
+.contract-title { margin: 4px 0 12px; font-size: 18px; }
+.contract-subtitle { margin: 22px 0 8px; font-size: 16px; border-top: 1px solid #dde4de; padding-top: 14px; }
+.contract-terms { white-space: pre-wrap; font-size: 13px; line-height: 1.5; color: #2b332e; }
+.sign-form { display: flex; flex-direction: column; gap: 12px; }
+.sign-form label { color: #1c2420; }
+.sign-form input[type="text"], .sign-form input:not([type]), .sign-form input[type="tel"], .sign-form input[type="email"] { background: #fff; color: #1c2420; border: 1px solid #c9d2cc; }
+.sign-form .row { display: flex; gap: 12px; flex-wrap: wrap; }
+.sign-form .row label { flex: 1 1 200px; }
+.agree { display: flex; flex-direction: row; gap: 10px; align-items: flex-start; font-size: 14px; font-weight: 500; cursor: pointer; }
+.agree input { width: 22px; height: 22px; flex: none; margin-top: 1px; }
+button.big { padding: 14px 18px; font-size: 17px; }
+.sigpad { position: relative; display: flex; flex-direction: column; gap: 6px; }
+.sigpad-canvas { width: 100%; height: 180px; background: #fbfcfb; border: 1.5px dashed #9aa79f; border-radius: 10px; touch-action: none; cursor: crosshair; }
+.sigpad-hint { position: absolute; left: 0; right: 0; top: 70px; text-align: center; color: #b3bdb6; font-size: 22px; pointer-events: none; }
+.sigpad-foot { display: flex; justify-content: space-between; align-items: center; }
+.signed-block { display: flex; flex-direction: column; gap: 6px; }
+.signed-sig { display: flex; flex-direction: column; gap: 4px; max-width: 420px; }
+.signature-img { width: 100%; max-height: 140px; object-fit: contain; object-position: left; border-bottom: 1.5px solid #1c2420; }
+.audit { margin-top: 6px; }
+.signed-banner { background: #173d24; border: 1px solid #2f6b43; color: #cdeed6; padding: 10px 14px; border-radius: 10px; font-weight: 600; }
+.badge.won { background: #1f5c34; color: #d4f5de; }
+.terms-input { width: 100%; font: inherit; font-size: 13px; line-height: 1.5; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg, #111); color: inherit; resize: vertical; box-sizing: border-box; }
+/* Projects tab (closed deals) */
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0 18px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.stat strong { font-size: 22px; color: var(--gold); }
+.stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.deal-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.deal { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.deal-main { display: flex; flex-direction: column; gap: 2px; flex: 1 1 220px; min-width: 0; }
+.deal-money { display: flex; flex-direction: column; align-items: flex-end; }
+.deal-money strong { color: var(--gold); font-size: 18px; }
 .quote-disclaimer { margin-top: 14px; padding-top: 10px; border-top: 1px solid #dde4de; font-size: 13px; color: #3d4741; }
 .settings .form { margin-bottom: 8px; }
 @media print {
@@ -101,3 +134,4 @@ div.stage-photo { object-fit: initial; }
   main { max-width: none; padding: 0; }
   .quote { margin: 0; border-radius: 0; }
 }
+button:disabled { opacity: .45; cursor: not-allowed; }

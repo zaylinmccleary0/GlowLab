@@ -7,8 +7,11 @@ import ProjectsView from './views/ProjectsView';
 import DesignerView from './views/DesignerView';
 import SettingsView from './views/SettingsView';
 import QuoteView from './views/QuoteView';
+import ContractView from './views/ContractView';
+import DealsView from './views/DealsView';
 
-type Tab = 'projects' | 'quotes' | 'settings';
+/** Designs = every design/estimate; Quotes = one quote at a time; Projects = closed deals (signed contracts). */
+type Tab = 'projects' | 'quotes' | 'deals' | 'settings';
 
 function AuthScreen() {
   const { login, register } = useAuth();
@@ -52,6 +55,9 @@ function Shell() {
   const [tab, setTab] = useState<Tab>('projects');
   const [open, setOpen] = useState<Project | null>(null);
   const [quoteProject, setQuoteProject] = useState<Project | null>(null);
+  const [dealProject, setDealProject] = useState<Project | null>(null);
+  const go = (t: Tab) => { setTab(t); setOpen(null); window.scrollTo(0, 0); };
+  const showDeal = (p: Project) => { setDealProject(p); go('deals'); };
   const [presets, setPresets] = useState<Preset[]>([]);
   const [settings, setSettings] = useState<PricingSettings | null>(null);
 
@@ -69,8 +75,9 @@ function Shell() {
       <header className="no-print">
         <span className="logo brand"><img src="/icon-192.png" alt="" className="brand-mark" />GlowLab</span>
         <nav>
-          <button className={tab === 'projects' && !open ? 'nav active' : 'nav'} onClick={() => { setTab('projects'); setOpen(null); }}>Projects</button>
-          <button className={tab === 'quotes' ? 'nav active' : 'nav'} onClick={() => { setTab('quotes'); setOpen(null); }}>Quotes</button>
+          <button className={tab === 'projects' || open ? 'nav active' : 'nav'} onClick={() => go('projects')}>Designs</button>
+          <button className={tab === 'quotes' && !open ? 'nav active' : 'nav'} onClick={() => go('quotes')}>Quotes</button>
+          <button className={tab === 'deals' && !open ? 'nav active' : 'nav'} onClick={() => { setDealProject(null); go('deals'); }}>Projects</button>
           <button className={tab === 'settings' ? 'nav active' : 'nav'} onClick={() => { setTab('settings'); setOpen(null); }}>Settings</button>
         </nav>
         <span className="muted small">{user.name}</span>
@@ -82,10 +89,17 @@ function Shell() {
         ) : tab === 'quotes' ? (
           settings ? (
             <QuoteView project={quoteProject} presets={presets} settings={settings} onPick={setQuoteProject}
-              onEdit={(p) => { setOpen(p); setTab('projects'); window.scrollTo(0, 0); }} />
+              onEdit={(p) => { setOpen(p); setTab('projects'); window.scrollTo(0, 0); }}
+              onSigned={(p) => { setQuoteProject(null); showDeal(p); }} />
           ) : <p className="muted">Loading…</p>
+        ) : tab === 'deals' ? (
+          dealProject && settings ? (
+            <ContractView key={dealProject.id} project={dealProject} presets={presets} settings={settings}
+              onBack={() => setDealProject(null)}
+              onVoided={(p) => { setDealProject(null); setQuoteProject(p); go('quotes'); }} />
+          ) : <DealsView onOpen={setDealProject} />
         ) : tab === 'projects' ? (
-          <ProjectsView settings={settings} onOpen={setOpen} />
+          <ProjectsView settings={settings} onOpen={setOpen} onOpenContract={showDeal} />
         ) : (
           <SettingsView onSaved={setSettings} />
         )}

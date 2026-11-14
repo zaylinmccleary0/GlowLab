@@ -3,17 +3,24 @@ import type { Preset, PricingSettings, Project } from '@glowlab/shared';
 import { INSTALL_TYPE_LABELS, QUOTE_DISCLAIMER, computeEstimate, money, normalizeEstimateOptions, profileFor, rateCardFor } from '@glowlab/shared';
 import { api } from '../api';
 import { HouseStage } from './DesignerView';
+import ContractView from './ContractView';
 
 /**
  * The Quote tab: the customer-facing quote for one project, on its own page.
  * With no project picked yet it lists projects to choose from.
  */
-export default function QuoteView({ project, presets, settings, onPick, onEdit }: {
+export default function QuoteView({ project, presets, settings, onPick, onEdit, onSigned }: {
   project: Project | null; presets: Preset[]; settings: PricingSettings;
-  onPick: (p: Project) => void; onEdit: (p: Project) => void;
+  onPick: (p: Project) => void; onEdit: (p: Project) => void; onSigned: (p: Project) => void;
 }) {
   const [night, setNight] = useState(true);
+  const [signing, setSigning] = useState(false);
+  useEffect(() => { setSigning(false); }, [project?.id]);
   if (!project) return <QuotePicker onPick={onPick} />;
+  if (signing) {
+    return <ContractView project={project} presets={presets} settings={settings}
+      onBack={() => { setSigning(false); window.scrollTo(0, 0); }} onSigned={onSigned} />;
+  }
 
   const preset = presets.find((p) => p.id === project.presetId) ?? presets[0];
   if (!preset) return <p className="muted">Loading…</p>;
@@ -26,7 +33,9 @@ export default function QuoteView({ project, presets, settings, onPick, onEdit }
       <div className="toolbar no-print">
         <button onClick={() => onEdit(project)}>← Edit design</button>
         <label className="toggle"><input type="checkbox" checked={night} onChange={(e) => setNight(e.target.checked)} /> Night mode</label>
-        <button className="primary" onClick={() => window.print()}>Print quote</button>
+        <button onClick={() => window.print()}>Print quote</button>
+        <button className="primary" onClick={() => { setSigning(true); window.scrollTo(0, 0); }} disabled={estimate.total <= 0}
+          title={estimate.total > 0 ? 'Customer reviews and signs the contract on this screen' : 'Price the design first'}>Sign contract →</button>
       </div>
       {estimate.totalFeet === 0 && (
         <p className="error no-print">This project has no lit footage yet. Trace its lines and calibrate it in the designer to price it.</p>
@@ -71,7 +80,8 @@ function QuotePicker({ onPick }: { onPick: (p: Project) => void }) {
   const [opening, setOpening] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listProjects().then(({ projects: ps }) => setProjects(ps)).catch((e) => setError((e as Error).message));
+    // Signed jobs live on the Projects tab, so only open quotes are listed here.
+    api.listProjects().then(({ projects: ps }) => setProjects(ps.filter((p) => p.status !== 'won'))).catch((e) => setError((e as Error).message));
   }, []);
 
   const pick = async (id: string) => {
@@ -85,7 +95,7 @@ function QuotePicker({ onPick }: { onPick: (p: Project) => void }) {
       <p className="muted">Pick a project to see its quote, or open a project and click <strong>Quote view</strong>.</p>
       {error && <p className="error">{error}</p>}
       {!projects && !error && <p className="muted">Loading…</p>}
-      {projects?.length === 0 && <p className="muted">No projects yet. Start one on the Projects tab.</p>}
+      {projects?.length === 0 && <p className="muted">No open quotes. Start a design on the Designs tab.</p>}
       <ul className="line-list">
         {projects?.map((p) => (
           <li key={p.id}>

@@ -2,7 +2,7 @@ import { createClient, type Client, type InValue } from '@libsql/client';
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import type { Calibration, EstimateOptions, PricingSettings, Project, PublicUser, TracedLine } from '@glowlab/shared';
+import type { Calibration, EstimateOptions, PricingSettings, Project, ProjectStatus, PublicUser, SignedContract, TracedLine } from '@glowlab/shared';
 import {
   DEFAULT_PRICING, DEFAULT_ESTIMATE_OPTIONS, DEFAULT_PERMANENT_RATES, DEFAULT_BULB_SPACING_INCHES,
   normalizeEstimateOptions, validatePricingSettings,
@@ -15,6 +15,7 @@ interface DbProject {
   photo_data_url: string | null; thumb_data_url: string | null; has_photo?: number; image_width: number; image_height: number;
   calibration_json: string | null; lines_json: string; preset_id: string;
   estimate_options_json: string; created_at: string; updated_at: string;
+  status?: string | null; contract_json?: string | null; signature_data_url?: string | null;
 }
 
 const SCHEMA = [
@@ -52,6 +53,19 @@ async function migrate(db: Client): Promise<void> {
   const pcols = await db.execute('PRAGMA table_info(projects)');
   if (!pcols.rows.some((r) => r.name === 'thumb_data_url')) {
     await db.execute('ALTER TABLE projects ADD COLUMN thumb_data_url TEXT');
+  }
+  // Contracts: a project is a 'quote' until signed, then 'won' with a frozen contract.
+  if (!pcols.rows.some((r) => r.name === 'status')) {
+    await db.execute("ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'quote'");
+  }
+  if (!pcols.rows.some((r) => r.name === 'contract_json')) {
+    await db.execute('ALTER TABLE projects ADD COLUMN contract_json TEXT');
+  }
+  if (!pcols.rows.some((r) => r.name === 'signature_data_url')) {
+    await db.execute('ALTER TABLE projects ADD COLUMN signature_data_url TEXT');
+  }
+  if (!cols.rows.some((r) => r.name === 'contract_terms')) {
+    await db.execute('ALTER TABLE settings ADD COLUMN contract_terms TEXT');
   }
 }
 let ready: Promise<Client> | null = null;
@@ -165,6 +179,9 @@ function toProject(row: DbProject): Project {
     presetId: row.preset_id,
     estimateOptions: normalizeEstimateOptions(JSON.parse(row.estimate_options_json) as EstimateOptions),
     createdAt: row.created_at, updatedAt: row.updated_at,
+    status: (row.status === 'won' ? 'won' : 'quote') as ProjectStatus,
+    contract: row.contract_json ? (JSON.parse(row.contract_json) as SignedContract) : null,
+    signatureDataUrl: row.signature_data_url ?? null,
   };
 }
 /**
@@ -175,7 +192,7 @@ function toProject(row: DbProject): Project {
 export async function listProjects(userId: string): Promise<Project[]> {
   const rows = await all<DbProject>(
     `SELECT id, user_id, client_name, address, NULL AS photo_data_url, thumb_data_url, (photo_data_url IS NOT NULL) AS has_photo, image_width, image_height, calibration_json,
-      lines_json, preset_id, estimate_options_json, created_at, updated_at
+      lines_json, preset_id, estimate_options_json, created_at, updated_at, status, contract_json, NULL AS signature_data_url
      FROM projects WHERE user_id = ? ORDER BY updated_at DESC`, [userId]);
   return rows.map(toProject);
 }
@@ -211,5 +228,31 @@ export async function updateProject(userId: string, id: string, input: ProjectIn
 }
 export async function deleteProject(userId: string, id: string): Promise<boolean> {
   return (await run('DELETE FROM projects WHERE id = ? AND user_id = ?', [id, userId])) > 0;
+}
+/**
+ * Marks a quote as won with its signed contract. Only succeeds once: a project that's
+ * already signed is left alone (returns false), so a double tap can't sign twice.
+ */
+export async function signProject(userId: string, id: string, contract: SignedContract, signatureDataUrl: string): Promise<boolean> {
+  return (await run(`UPDATE projects SET status='won', contract_json=?, signature_data_url=?, updated_at=?
+    WHERE id=? AND user_id=? AND status != 'won'`, [JSON.stringify(contract), signatureDataUrl, nowIso(), id, userId])) > 0;
+}
+/** Voids a signed contract: the project goes back to being an editable quote. */
+export async function voidContract(userId: string, id: string): Promise<boolean> {
+  return (await run(`UPDATE projects SET status='quote', contract_json=NULL, signature_data_url=NULL, updated_at=?
+    WHERE id=? AND user_id=? AND status = 'won'`, [nowIso(), id, userId])) > 0;
+}
+
+// ----- contract terms -----
+/** The business's own contract terms, or null to use the default terms. */
+export async function getContractTerms(userId: string): Promise<string | null> {
+  const row = await one<{ contract_terms: string | null }>('SELECT contract_terms FROM settings WHERE user_id = ?', [userId]);
+  return row?.contract_terms ?? null;
+}
+export async function saveContractTerms(userId: string, terms: string | null): Promise<void> {
+  if ((await run('UPDATE settings SET contract_terms = ? WHERE user_id = ?', [terms, userId])) > 0) return;
+  // No settings row yet (very old account): create it with the current prices, then save.
+  await run(SETTINGS_UPSERT, settingsArgs(userId, await getSettings(userId)));
+  await run('UPDATE settings SET contract_terms = ? WHERE user_id = ?', [terms, userId]);
 }
 export { DEFAULT_ESTIMATE_OPTIONS };

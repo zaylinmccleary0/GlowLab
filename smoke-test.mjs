@@ -113,6 +113,42 @@ try { await req(`/api/projects/${mp.id}`, { method: 'PUT', token, body: { lines:
 check('bad bulb color rejected', badPaint, true);
 await req(`/api/projects/${mp.id}`, { method: 'DELETE', token });
 
+// 5d. Contracts: sign a quote -> closed deal with frozen price; locked; void -> quote again
+const SIG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const { project: cq } = await req('/api/projects', { method: 'POST', token, body: { ...project, clientName: 'Contract House' } });
+const terms0 = await req('/api/settings/contract-terms', { token });
+check('default terms used when none saved', terms0.terms, null);
+await req('/api/settings/contract-terms', { method: 'PUT', token, body: { terms: 'Pay {business} on time.' } });
+let noSig = false;
+try { await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', agreed: true } }); } catch { noSig = true; }
+check('signing without a signature rejected', noSig, true);
+let noAgree = false;
+try { await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG } }); } catch { noAgree = true; }
+check('signing without agreeing rejected', noAgree, true);
+const { project: won } = await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat Doe', customerPhone: '555-0100', customerEmail: 'pat@example.test', signatureDataUrl: SIG, agreed: true } });
+check('signed project is won', won.status, 'won');
+check('contract total = estimate (50 ft x $7.50)', won.contract.estimate.total, 375);
+check('contract balance due', won.contract.balanceDue, 187.5);
+check('terms frozen with business name', won.contract.terms, 'Pay Test Lighting Co on time.');
+check('signature kept on the project', won.signatureDataUrl, SIG);
+const listedWon = (await req('/api/projects', { token })).projects.find((p) => p.id === cq.id);
+check('list leaves the signature out', listedWon.signatureDataUrl, null);
+check('list shows status', listedWon.status, 'won');
+let locked = false;
+try { await req(`/api/projects/${cq.id}`, { method: 'PUT', token, body: { clientName: 'Changed' } }); } catch { locked = true; }
+check('signed project cannot be edited', locked, true);
+let twice = false;
+try { await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true } }); } catch { twice = true; }
+check('cannot sign twice', twice, true);
+// A later price change doesn't touch the signed contract
+await req('/api/settings', { method: 'PUT', token, body: { profiles: [{ ...DEFAULTS.profiles[0], seasonal: { ...DEFAULTS.profiles[0].seasonal, ratePerFoot: 99 } }] } });
+check('price change leaves contract alone', (await req(`/api/projects/${cq.id}`, { token })).project.contract.estimate.total, 375);
+await req('/api/settings', { method: 'PUT', token, body: DEFAULTS });
+const { project: voided } = await req(`/api/projects/${cq.id}/void`, { method: 'POST', token, body: {} });
+check('void returns it to a quote', [voided.status, voided.contract, voided.signatureDataUrl], ['quote', null, null]);
+await req(`/api/projects/${cq.id}`, { method: 'DELETE', token });
+await req('/api/settings/contract-terms', { method: 'PUT', token, body: { terms: null } });
+
 // 6. bad preset is rejected
 let rejected = false;
 try {

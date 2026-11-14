@@ -5,6 +5,41 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import NumberField from '../NumberField';
 
+/** Contract terms, copied into each contract when the customer signs. */
+function ContractTermsSettings() {
+  const [terms, setTerms] = useState<string | null>(null);
+  const [defaults, setDefaults] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api.getContractTerms().then(({ terms: t, defaultTerms }) => { setDefaults(defaultTerms); setTerms(t ?? defaultTerms); }).catch((e: Error) => setError(e.message));
+  }, []);
+  if (terms === null) return <p className="muted">{error ?? 'Loading contract terms…'}</p>;
+  const save = async () => {
+    setError(null);
+    try {
+      const value = terms.trim() === defaults.trim() ? null : terms;
+      await api.saveContractTerms(value);
+      setSaved(true); setTimeout(() => setSaved(false), 2000);
+    } catch (e) { setError((e as Error).message); }
+  };
+  return (
+    <div className="card form">
+      <h3 style={{ margin: 0 }}>Contract terms</h3>
+      <p className="muted small" style={{ margin: 0 }}>
+        These terms go into every contract when the customer signs. Already-signed contracts keep the terms they were signed with.
+        {' '}<strong>{'{business}'}</strong> is replaced with your business name. These starter terms aren’t legal advice — have them reviewed for your state.
+      </p>
+      <textarea className="terms-input" value={terms} onChange={(e) => setTerms(e.target.value)} rows={14} aria-label="Contract terms" />
+      {error && <p className="error">{error}</p>}
+      <div className="toolbar">
+        <button className="primary" onClick={() => { void save(); }}>{saved ? 'Saved ✓' : 'Save contract terms'}</button>
+        <button type="button" onClick={() => { if (window.confirm('Replace your terms with the starter terms?')) setTerms(defaults); }}>Use starter terms</button>
+      </div>
+    </div>
+  );
+}
+
 const newId = () => `list-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
 export default function SettingsView({ onSaved }: { onSaved: (s: PricingSettings) => void }) {
@@ -107,6 +142,7 @@ export default function SettingsView({ onSaved }: { onSaved: (s: PricingSettings
           {settings.profiles.length > 1 && <button type="button" className="danger" onClick={removeActive}>Delete this list</button>}
         </div>
       </div>
+      <ContractTermsSettings />
       <button className="danger" onClick={logout}>Log out</button>
     </div>
   );

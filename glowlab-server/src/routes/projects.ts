@@ -1,7 +1,13 @@
 import { Router, Request, Response } from 'express';
-import type { EstimateOptions, Project } from '@glowlab/shared';
-import { DEFAULT_ESTIMATE_OPTIONS, computeEstimate, getPreset, normalizeEstimateOptions } from '@glowlab/shared';
-import { deleteProject, getProject, getSettings, insertProject, listProjects, updateProject, type ProjectInput } from '../db';
+import type { EstimateOptions, Project, SignedContract } from '@glowlab/shared';
+import {
+  DEFAULT_ESTIMATE_OPTIONS, computeEstimate, contractTermsFor, getPreset, normalizeEstimateOptions, profileFor, round2, validateSignInput,
+} from '@glowlab/shared';
+import {
+  deleteProject, getContractTerms, getProject, getSettings, insertProject, listProjects, signProject, updateProject, voidContract, type ProjectInput,
+} from '../db';
+
+const SIGNED_LOCKED = "This project has a signed contract, so it can't be changed. Void the contract first to edit it.";
 
 const router = Router();
 const LINE_KINDS = ['roofline', 'ridge', 'gutter', 'window', 'door', 'pathway', 'tree', 'outline'];
@@ -68,12 +74,15 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   const existing = await getProject(req.currentUser.id, String(req.params.id));
   if (!existing) { res.status(404).json({ error: 'Project not found' }); return; }
+  if (existing.status === 'won') { res.status(409).json({ error: SIGNED_LOCKED }); return; }
   const { input, error } = parseInput(req.body ?? {}, existing);
   if (!input) { res.status(400).json({ error }); return; }
   res.json({ project: await updateProject(req.currentUser.id, String(req.params.id), input) });
 });
 
 router.delete('/:id', async (req: Request, res: Response) => {
+  const existing = await getProject(req.currentUser.id, String(req.params.id));
+  if (existing?.status === 'won') { res.status(409).json({ error: 'This project has a signed contract. Void the contract before deleting it.' }); return; }
   if (!(await deleteProject(req.currentUser.id, String(req.params.id)))) { res.status(404).json({ error: 'Project not found' }); return; }
   res.json({ ok: true });
 });
@@ -86,6 +95,50 @@ router.post('/:id/estimate', async (req: Request, res: Response) => {
   const options = (req.body?.options as EstimateOptions) ?? project.estimateOptions;
   const estimate = computeEstimate(project, preset, await getSettings(req.currentUser.id), options);
   res.json({ estimate, preset });
+});
+
+/**
+ * Signs the contract for a quote. The price is worked out here on the server from the saved
+ * design and the business's current price list and terms, then frozen into the contract.
+ */
+router.post('/:id/sign', async (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const project = await getProject(req.currentUser.id, id);
+  if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
+  if (project.status === 'won') { res.status(409).json({ error: 'This contract is already signed.' }); return; }
+  const { input, error } = validateSignInput(req.body);
+  if (!input) { res.status(400).json({ error }); return; }
+  const preset = getPreset(project.presetId);
+  if (!preset) { res.status(400).json({ error: 'Project has an unknown preset' }); return; }
+  const settings = await getSettings(req.currentUser.id);
+  const options = normalizeEstimateOptions(project.estimateOptions);
+  const estimate = computeEstimate(project, preset, settings, options);
+  if (!(estimate.totalFeet > 0) || !(estimate.total > 0)) {
+    res.status(400).json({ error: 'This quote has no priced lighting yet. Trace and calibrate the design first.' }); return;
+  }
+  const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
+  const businessName = req.currentUser.name;
+  const contract: SignedContract = {
+    signedAt: new Date().toISOString(),
+    customerName: input.customerName, customerPhone: input.customerPhone, customerEmail: input.customerEmail,
+    businessName, clientName: project.clientName, address: project.address,
+    presetName: preset.name, installType: options.installType, bulbSpacingInches: profileFor(settings, options).bulbSpacingInches,
+    estimate, balanceDue: round2(estimate.total - estimate.depositDue),
+    terms: contractTermsFor(await getContractTerms(req.currentUser.id), businessName),
+    signerIp: forwarded || req.socket.remoteAddress || '',
+    signerUserAgent: String(req.headers['user-agent'] ?? '').slice(0, 300),
+  };
+  if (!(await signProject(req.currentUser.id, id, contract, input.signatureDataUrl))) {
+    res.status(409).json({ error: 'This contract is already signed.' }); return;
+  }
+  res.json({ project: await getProject(req.currentUser.id, id) });
+});
+
+/** Voids a signed contract and turns the project back into an editable quote. */
+router.post('/:id/void', async (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  if (!(await voidContract(req.currentUser.id, id))) { res.status(404).json({ error: 'No signed contract to void' }); return; }
+  res.json({ project: await getProject(req.currentUser.id, id) });
 });
 
 export default router;

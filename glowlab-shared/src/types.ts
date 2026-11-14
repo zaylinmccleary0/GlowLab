@@ -58,6 +58,35 @@ export interface Project {
   hasPhoto?: boolean;
   calibration: Calibration | null; lines: TracedLine[]; presetId: string;
   estimateOptions: EstimateOptions; createdAt: string; updatedAt: string;
+  /** 'quote' until the customer signs the contract, then 'won' (a closed deal). */
+  status?: ProjectStatus;
+  /** The signed contract: a snapshot of the price and terms at signing. Null while it's a quote. */
+  contract?: SignedContract | null;
+  /** The customer's drawn signature (PNG data URL). Only on single-project results, never in the list. */
+  signatureDataUrl?: string | null;
+}
+export type ProjectStatus = 'quote' | 'won';
+/**
+ * Everything the customer agreed to, frozen at the moment of signing, so later price-list
+ * or terms changes never alter a signed contract.
+ */
+export interface SignedContract {
+  signedAt: string;
+  customerName: string; customerPhone: string; customerEmail: string;
+  businessName: string;
+  clientName: string; address: string;
+  presetName: string; installType: InstallType; bulbSpacingInches: number;
+  estimate: EstimateBreakdown;
+  /** Balance due on completion (total minus deposit). */
+  balanceDue: number;
+  terms: string;
+  /** Audit trail for the electronic signature. */
+  signerIp: string; signerUserAgent: string;
+}
+/** What the customer fills in on the signing screen. */
+export interface SignContractInput {
+  customerName: string; customerPhone: string; customerEmail: string;
+  signatureDataUrl: string; agreed: boolean;
 }
 export interface PublicUser { id: string; name: string; email: string; }
 export interface BulbPosition { point: Point; angleDeg: number; index: number; }

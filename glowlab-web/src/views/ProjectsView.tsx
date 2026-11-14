@@ -19,6 +19,7 @@ function feetByKind(p: Project): [LineKind, number][] {
 function ProjectCard({ p, settings, onOpen, onDelete }: {
   p: Project; settings: PricingSettings; onOpen: () => void; onDelete: () => void;
 }) {
+  const signed = p.status === 'won';
   const preset = getPreset(p.presetId);
   const opts = normalizeEstimateOptions(p.estimateOptions);
   const profile = profileFor(settings, opts);
@@ -29,7 +30,7 @@ function ProjectCard({ p, settings, onOpen, onDelete }: {
 
   return (
     <div className="card project-card">
-      <div className="card-preview" onClick={onOpen} role="button" tabIndex={0} title="Open designer"
+      <div className="card-preview" onClick={onOpen} role="button" tabIndex={0} title={signed ? 'View signed contract' : 'Open designer'}
         onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}>
         {missingPreview || !preset ? (
           <div className="card-preview-empty">Photo saved — open once to make its preview</div>
@@ -39,9 +40,10 @@ function ProjectCard({ p, settings, onOpen, onDelete }: {
         )}
       </div>
       <div className="card-head"><span className="card-title">{p.clientName}</span>
-        <button className="icon" title="Delete" onClick={onDelete}>✕</button></div>
+        {!signed && <button className="icon" title="Delete" onClick={onDelete}>✕</button>}</div>
       <span className="muted small">{p.address || 'No address'}</span>
       <div className="chips wrap">
+        {signed && <span className="badge won">Signed ✓</span>}
         <span className="badge">{preset?.name ?? p.presetId}</span>
         <span className="badge alt">{INSTALL_TYPE_LABELS[opts.installType]}</span>
         {settings.profiles.length > 1 && <span className="badge alt">{profile.name}</span>}
@@ -55,7 +57,12 @@ function ProjectCard({ p, settings, onOpen, onDelete }: {
           <ul className="card-lines">
             {kinds.map(([k, ft]) => <li key={k}><span>{k}</span><span>{ft.toFixed(1)} ft</span></li>)}
           </ul>
-          {est && (
+          {signed && p.contract ? (
+            <div className="card-total">
+              <span className="muted small">signed {new Date(p.contract.signedAt).toLocaleDateString()}</span>
+              <strong>{money(p.contract.estimate.total)}</strong>
+            </div>
+          ) : est && (
             <div className="card-total">
               <span className="muted small">{est.totalFeet} ft lit • {est.bulbCount} bulbs</span>
               <strong>{money(est.total)}</strong>
@@ -63,12 +70,14 @@ function ProjectCard({ p, settings, onOpen, onDelete }: {
           )}
         </>
       )}
-      <button className="primary" onClick={onOpen}>Open designer</button>
+      <button className="primary" onClick={onOpen}>{signed ? 'View contract' : 'Open designer'}</button>
     </div>
   );
 }
 
-export default function ProjectsView({ settings, onOpen }: { settings: PricingSettings | null; onOpen: (p: Project) => void }) {
+export default function ProjectsView({ settings, onOpen, onOpenContract }: {
+  settings: PricingSettings | null; onOpen: (p: Project) => void; onOpenContract: (p: Project) => void;
+}) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [clientName, setClientName] = useState('');
   const [address, setAddress] = useState('');
@@ -95,13 +104,13 @@ export default function ProjectsView({ settings, onOpen }: { settings: PricingSe
   };
   // The list has no full-size photos (keeps it small), so load the full project before opening it.
   const open = async (id: string) => {
-    try { const { project } = await api.getProject(id); onOpen(project); }
+    try { const { project } = await api.getProject(id); if (project.status === 'won') onOpenContract(project); else onOpen(project); }
     catch (err) { setError((err as Error).message); }
   };
 
   return (
     <div>
-      <h2>Projects</h2>
+      <h2>Designs</h2>
       <form className="form narrow" onSubmit={create}>
         <div className="row">
           <label>Client name<input required value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="The Johnsons" /></label>
@@ -114,7 +123,7 @@ export default function ProjectsView({ settings, onOpen }: { settings: PricingSe
         {projects.map((p) => (
           <ProjectCard key={p.id} p={p} settings={settings ?? DEFAULT_PRICING} onOpen={() => open(p.id)} onDelete={() => del(p)} />
         ))}
-        {projects.length === 0 && <p className="muted">No projects yet — create your first estimate above.</p>}
+        {projects.length === 0 && <p className="muted">No designs yet — create your first estimate above.</p>}
       </div>
     </div>
   );

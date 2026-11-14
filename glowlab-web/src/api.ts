@@ -1,4 +1,4 @@
-import type { EstimateBreakdown, EstimateOptions, Preset, PricingSettings, Project, PublicUser } from '@glowlab/shared';
+import type { EstimateBreakdown, EstimateOptions, Preset, PricingSettings, Project, PublicUser, SignContractInput } from '@glowlab/shared';
 
 const TOKEN_KEY = 'glowlab.token';
 export function getToken(): string | null { return localStorage.getItem(TOKEN_KEY); }
@@ -18,7 +18,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export interface AuthResponse { token: string; user: PublicUser; }
-export type ProjectInput = Omit<Project, 'id' | 'createdAt' | 'updatedAt'>;
+export type ProjectInput = Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'contract' | 'signatureDataUrl'>;
 
 export const api = {
   register: (name: string, email: string, password: string) =>
@@ -37,4 +37,11 @@ export const api = {
     request<{ estimate: EstimateBreakdown; preset: Preset }>(`/api/projects/${id}/estimate`, { method: 'POST', body: JSON.stringify({ options }) }),
   getSettings: () => request<{ settings: PricingSettings }>('/api/settings'),
   saveSettings: (settings: PricingSettings) => request<{ settings: PricingSettings }>('/api/settings', { method: 'PUT', body: JSON.stringify(settings) }),
+  /** Signs the contract: the quote becomes a closed deal with the price and terms frozen. */
+  signContract: (id: string, input: SignContractInput) =>
+    request<{ project: Project }>(`/api/projects/${id}/sign`, { method: 'POST', body: JSON.stringify(input) }),
+  voidContract: (id: string) => request<{ project: Project }>(`/api/projects/${id}/void`, { method: 'POST', body: '{}' }),
+  getContractTerms: () => request<{ terms: string | null; defaultTerms: string }>('/api/settings/contract-terms'),
+  saveContractTerms: (terms: string | null) =>
+    request<{ terms: string | null; defaultTerms: string }>('/api/settings/contract-terms', { method: 'PUT', body: JSON.stringify({ terms }) }),
 };
