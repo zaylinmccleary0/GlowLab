@@ -9,6 +9,7 @@ import SettingsView from './views/SettingsView';
 import QuoteView from './views/QuoteView';
 import ContractView from './views/ContractView';
 import DealsView from './views/DealsView';
+import UpdateBanner from './UpdateBanner';
 
 /** Designs = every design/estimate; Quotes = one quote at a time; Projects = closed deals (signed contracts). */
 type Tab = 'projects' | 'quotes' | 'deals' | 'settings';
@@ -109,5 +110,5 @@ function Shell() {
 }
 
 export default function App() {
-  return <AuthProvider><Shell /></AuthProvider>;
+  return <AuthProvider><Shell /><UpdateBanner /></AuthProvider>;
 }
