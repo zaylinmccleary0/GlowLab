@@ -351,12 +351,12 @@ export default function DesignerView({ initial, presets, settings, onBack, onQuo
 
   return (
     <div>
-      <div className="toolbar no-print">
-        <button onClick={goBack} title={dirty ? 'Saves your changes, then goes back' : undefined}>← Projects</button>
-        <input className="inline-input" value={project.clientName} onChange={(e) => setProject({ ...project, clientName: e.target.value })} aria-label="Client name" />
-        <input className="inline-input wide" value={project.address} onChange={(e) => setProject({ ...project, address: e.target.value })} placeholder="Address" aria-label="Address" />
-        <button className="primary" onClick={() => { void save(); }}>{saved ? 'Saved ✓' : dirty ? 'Save project •' : 'Save project'}</button>
-        <button onClick={() => { void openQuote(); }} disabled={!hasEstimate}
+      <div className="toolbar designer-bar no-print">
+        <button className="back" onClick={goBack} title={dirty ? 'Saves your changes, then goes back' : undefined}>← Designs</button>
+        <input className="inline-input name" value={project.clientName} onChange={(e) => setProject({ ...project, clientName: e.target.value })} placeholder="Client name" aria-label="Client name" />
+        <input className="inline-input wide address" value={project.address} onChange={(e) => setProject({ ...project, address: e.target.value })} placeholder="Address" aria-label="Address" />
+        <button className="primary save" onClick={() => { void save(); }}>{saved ? 'Saved ✓' : dirty ? 'Save •' : 'Save'}</button>
+        <button className="quote-btn" onClick={() => { void openQuote(); }} disabled={!hasEstimate}
           title={hasEstimate ? 'Saves, then opens the Quote tab' : 'Trace and calibrate the lights first'}>Quote view →</button>
       </div>
       {error && <p className="error">{error}</p>}
@@ -372,7 +372,7 @@ export default function DesignerView({ initial, presets, settings, onBack, onQuo
 
           <HouseStage project={previewProject} preset={preset} spacingInches={profile.bulbSpacingInches} installType={opts.installType} night={night} interactive onTap={onTap} />
           {current.length > 0 && (
-            <p className="muted small">Current line: {current.length} point(s), {polylineLengthFeet(current, project.calibration, size).toFixed(1)} ft — click the photo to add points.</p>
+            <p className="muted small">Current line: {current.length} point(s), {polylineLengthFeet(current, project.calibration, size).toFixed(1)} ft — tap the photo to add points.</p>
           )}
 
           <div className="toolbar no-print" style={{ marginTop: 12 }}>
@@ -383,7 +383,7 @@ export default function DesignerView({ initial, presets, settings, onBack, onQuo
             </div>
             {activeMode === 'paint' ? (
               <>
-                <span className="small muted">Pick a color, then click any bulb:</span>
+                <span className="small muted">Pick a color, then tap any bulb:</span>
                 <div className="swatches" role="radiogroup" aria-label="Bulb color">
                   {PAINT_COLORS.map((c) => (
                     <button key={c.color} role="radio" aria-checked={paintColor === c.color} title={c.name} aria-label={c.name}
@@ -405,7 +405,7 @@ export default function DesignerView({ initial, presets, settings, onBack, onQuo
               </>
             ) : (
               <>
-                <span className="small muted">Click 2 points on a known width, then set its real size:</span>
+                <span className="small muted">Tap 2 points on a known width, then set its real size:</span>
                 <button onClick={() => applyCalibrationFeet(3)}>Front door 3 ft</button>
                 <button onClick={() => applyCalibrationFeet(9)}>Garage 9 ft</button>
                 <input style={{ width: 70 }} type="number" min="0.5" step="0.5" value={customFeet} onChange={(e) => setCustomFeet(e.target.value)} aria-label="Custom feet" />
@@ -421,7 +421,7 @@ export default function DesignerView({ initial, presets, settings, onBack, onQuo
               {project.lines.map((l) => (
                 <li key={l.id}>
                   <span className="badge">{l.kind}</span> {(lengths[l.id] ?? 0).toFixed(1)} ft
-                  <button className="icon" onClick={() => setProject({ ...project, lines: project.lines.filter((x) => x.id !== l.id) })}>✕</button>
+                  <button className="icon remove" aria-label={`Remove ${l.kind} line`} onClick={() => setProject({ ...project, lines: project.lines.filter((x) => x.id !== l.id) })}>✕</button>
                 </li>
               ))}
               {project.lines.length === 0 && <li className="muted">No lines yet. Trace the roofline first.</li>}
@@ -468,7 +468,7 @@ export default function DesignerView({ initial, presets, settings, onBack, onQuo
             <div key={key} className="stepper">
               <span>{label} <span className="muted small">{money(price)} ea</span></span>
               <span>
-                <button onClick={() => setAddOn(key, -1)}>−</button> {opts.addOns[key]} <button onClick={() => setAddOn(key, 1)}>+</button>
+                <button className="step" onClick={() => setAddOn(key, -1)} aria-label={`Fewer ${label.toLowerCase()}`}>−</button><span className="step-count">{opts.addOns[key]}</span><button className="step" onClick={() => setAddOn(key, 1)} aria-label={`More ${label.toLowerCase()}`}>+</button>
               </span>
             </div>
           ))}

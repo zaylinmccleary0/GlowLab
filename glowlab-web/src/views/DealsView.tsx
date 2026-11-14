@@ -1,19 +1,22 @@
 import { useEffect, useState } from 'react';
 import type { Project } from '@glowlab/shared';
 import { getPreset, money, round2 } from '@glowlab/shared';
-import { api } from '../api';
+import { api, cachedProjects } from '../api';
+import { shortDate } from '../format';
+
+const dealsFrom = (projects: Project[]) => projects
+  .filter((p) => p.status === 'won' && p.contract)
+  .sort((a, b) => (b.contract!.signedAt).localeCompare(a.contract!.signedAt));
 
 /** The Projects tab: closed deals (signed contracts), newest first, with totals. */
 export default function DealsView({ onOpen }: { onOpen: (p: Project) => void }) {
-  const [deals, setDeals] = useState<Project[] | null>(null);
+  const [deals, setDeals] = useState<Project[] | null>(() => { const c = cachedProjects(); return c ? dealsFrom(c) : null; });
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
 
   useEffect(() => {
     api.listProjects()
-      .then(({ projects }) => setDeals(projects
-        .filter((p) => p.status === 'won' && p.contract)
-        .sort((a, b) => (b.contract!.signedAt).localeCompare(a.contract!.signedAt))))
+      .then(({ projects }) => setDeals(dealsFrom(projects)))
       .catch((e: Error) => setError(e.message));
   }, []);
 
@@ -32,7 +35,7 @@ export default function DealsView({ onOpen }: { onOpen: (p: Project) => void }) 
       <h2>Projects</h2>
       <p className="muted">Closed deals: every quote that has a signed contract.</p>
       {error && <p className="error">{error}</p>}
-      {!deals && !error && <p className="muted">Loading…</p>}
+      {!deals && !error && <div className="spinner" aria-label="Loading" />}
       {deals && (
         <div className="stat-row">
           <div className="stat"><span className="stat-label">Closed deals</span><strong>{deals.length}</strong></div>
@@ -48,17 +51,17 @@ export default function DealsView({ onOpen }: { onOpen: (p: Project) => void }) 
         {deals?.map((p) => {
           const c = p.contract!;
           return (
-            <li key={p.id} className="deal">
+            <li key={p.id} className="deal tappable" onClick={() => { if (opening === null) void open(p.id); }}>
               <div className="deal-main">
                 <strong>{p.clientName}</strong>
                 <span className="muted small">{p.address || 'No address'}</span>
-                <span className="small">{getPreset(p.presetId)?.name ?? c.presetName} • signed {new Date(c.signedAt).toLocaleDateString()} by {c.customerName}</span>
+                <span className="small">{getPreset(p.presetId)?.name ?? c.presetName} • signed {shortDate(c.signedAt)} by {c.customerName}</span>
               </div>
               <div className="deal-money">
                 <strong>{money(c.estimate.total)}</strong>
                 <span className="muted small">deposit {money(c.estimate.depositDue)}</span>
               </div>
-              <button onClick={() => { void open(p.id); }} disabled={opening !== null}>{opening === p.id ? 'Opening…' : 'View contract'}</button>
+              <button onClick={(e) => { e.stopPropagation(); void open(p.id); }} disabled={opening !== null}>{opening === p.id ? 'Opening…' : 'View contract'}</button>
             </li>
           );
         })}

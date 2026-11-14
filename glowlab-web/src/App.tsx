@@ -51,14 +51,34 @@ function AuthScreen() {
   );
 }
 
+const ICONS: Record<Tab, JSX.Element> = {
+  projects: <path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" />,
+  quotes: <><path d="M7 3h7l5 5v13H7z" /><path d="M14 3v5h5M10 13h6M10 17h6" /></>,
+  deals: <><path d="M4 12.5 9 17.5 20 6.5" /></>,
+  settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></>,
+};
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'projects', label: 'Designs' },
+  { id: 'quotes', label: 'Quotes' },
+  { id: 'deals', label: 'Projects' },
+  { id: 'settings', label: 'Settings' },
+];
+
 function Shell() {
   const { user, loading } = useAuth();
   const [tab, setTab] = useState<Tab>('projects');
   const [open, setOpen] = useState<Project | null>(null);
   const [quoteProject, setQuoteProject] = useState<Project | null>(null);
   const [dealProject, setDealProject] = useState<Project | null>(null);
-  const go = (t: Tab) => { setTab(t); setOpen(null); window.scrollTo(0, 0); };
+  const top = () => window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  const go = (t: Tab) => { setTab(t); setOpen(null); top(); };
   const showDeal = (p: Project) => { setDealProject(p); go('deals'); };
+  // Tapping the tab you're already on goes back to that tab's main list.
+  const tapTab = (t: Tab) => {
+    if (t === 'deals' && (tab !== 'deals' || dealProject)) setDealProject(null);
+    if (t === 'quotes' && tab === 'quotes' && !open) setQuoteProject(null);
+    go(t);
+  };
   const [presets, setPresets] = useState<Preset[]>([]);
   const [settings, setSettings] = useState<PricingSettings | null>(null);
 
@@ -68,42 +88,55 @@ function Shell() {
     api.getSettings().then(({ settings: s }) => setSettings(s)).catch(() => undefined);
   }, [user]);
 
-  if (loading) return <p className="muted center">Loading…</p>;
+  if (loading) return <div className="boot"><img src="/icon-192.png" alt="" className="boot-mark" /></div>;
   if (!user) return <AuthScreen />;
+
+  const activeTab: Tab = open ? 'projects' : tab;
+  // Each screen gets its own key so switching screens plays the enter animation.
+  const screenKey = open ? `design-${open.id}`
+    : tab === 'quotes' ? `quotes-${quoteProject?.id ?? 'list'}`
+    : tab === 'deals' ? `deals-${dealProject?.id ?? 'list'}`
+    : tab;
 
   return (
     <div className="shell">
       <header className="no-print">
         <span className="logo brand"><img src="/icon-192.png" alt="" className="brand-mark" />GlowLab</span>
-        <nav>
-          <button className={tab === 'projects' || open ? 'nav active' : 'nav'} onClick={() => go('projects')}>Designs</button>
-          <button className={tab === 'quotes' && !open ? 'nav active' : 'nav'} onClick={() => go('quotes')}>Quotes</button>
-          <button className={tab === 'deals' && !open ? 'nav active' : 'nav'} onClick={() => { setDealProject(null); go('deals'); }}>Projects</button>
-          <button className={tab === 'settings' ? 'nav active' : 'nav'} onClick={() => { setTab('settings'); setOpen(null); }}>Settings</button>
+        <nav className="tabbar" aria-label="Main">
+          {TABS.map(({ id, label }) => (
+            <button key={id} className={activeTab === id ? 'nav active' : 'nav'} aria-current={activeTab === id ? 'page' : undefined} onClick={() => tapTab(id)}>
+              <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">{ICONS[id]}</svg>
+              <span>{label}</span>
+            </button>
+          ))}
         </nav>
-        <span className="muted small">{user.name}</span>
+        <span className="muted small user-name">{user.name}</span>
       </header>
       <main>
-        {open && settings ? (
-          <DesignerView key={open.id} initial={open} presets={presets} settings={settings} onBack={() => setOpen(null)}
-            onQuote={(p) => { setQuoteProject(p); setOpen(null); setTab('quotes'); window.scrollTo(0, 0); }} />
-        ) : tab === 'quotes' ? (
-          settings ? (
-            <QuoteView project={quoteProject} presets={presets} settings={settings} onPick={setQuoteProject}
-              onEdit={(p) => { setOpen(p); setTab('projects'); window.scrollTo(0, 0); }}
-              onSigned={(p) => { setQuoteProject(null); showDeal(p); }} />
-          ) : <p className="muted">Loading…</p>
-        ) : tab === 'deals' ? (
-          dealProject && settings ? (
-            <ContractView key={dealProject.id} project={dealProject} presets={presets} settings={settings}
-              onBack={() => setDealProject(null)}
-              onVoided={(p) => { setDealProject(null); setQuoteProject(p); go('quotes'); }} />
-          ) : <DealsView onOpen={setDealProject} />
-        ) : tab === 'projects' ? (
-          <ProjectsView settings={settings} onOpen={setOpen} onOpenContract={showDeal} />
-        ) : (
-          <SettingsView onSaved={setSettings} />
-        )}
+        <div className="screen" key={screenKey}>
+          {open && settings ? (
+            <DesignerView key={open.id} initial={open} presets={presets} settings={settings} onBack={() => { setOpen(null); top(); }}
+              onQuote={(p) => { setQuoteProject(p); setOpen(null); setTab('quotes'); top(); }} />
+          ) : open ? (
+            <div className="spinner" aria-label="Loading" />
+          ) : tab === 'quotes' ? (
+            settings ? (
+              <QuoteView project={quoteProject} presets={presets} settings={settings} onPick={(p) => { setQuoteProject(p); top(); }}
+                onEdit={(p) => { setOpen(p); setTab('projects'); top(); }}
+                onSigned={(p) => { setQuoteProject(null); showDeal(p); }} />
+            ) : <div className="spinner" aria-label="Loading" />
+          ) : tab === 'deals' ? (
+            dealProject && settings ? (
+              <ContractView key={dealProject.id} project={dealProject} presets={presets} settings={settings}
+                onBack={() => { setDealProject(null); top(); }}
+                onVoided={(p) => { setDealProject(null); setQuoteProject(p); go('quotes'); }} />
+            ) : <DealsView onOpen={(p) => { setDealProject(p); top(); }} />
+          ) : tab === 'projects' ? (
+            <ProjectsView settings={settings} onOpen={(p) => { setOpen(p); top(); }} onOpenContract={showDeal} />
+          ) : (
+            <SettingsView initial={settings} onSaved={setSettings} />
+          )}
+        </div>
       </main>
     </div>
   );

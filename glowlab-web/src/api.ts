@@ -1,8 +1,12 @@
 import type { EstimateBreakdown, EstimateOptions, Preset, PricingSettings, Project, PublicUser, SignContractInput } from '@glowlab/shared';
 
 const TOKEN_KEY = 'glowlab.token';
+let projectsCache: Project[] | null = null;
+/** The project list from the last load (null before the first), so a tab can show it instantly while it refreshes. */
+export function cachedProjects(): Project[] | null { return projectsCache; }
 export function getToken(): string | null { return localStorage.getItem(TOKEN_KEY); }
 export function setToken(token: string | null): void {
+  projectsCache = null;
   if (token) localStorage.setItem(TOKEN_KEY, token); else localStorage.removeItem(TOKEN_KEY);
 }
 
@@ -28,7 +32,7 @@ export const api = {
   me: () => request<{ user: PublicUser }>('/api/me'),
   presets: () => request<{ presets: Preset[]; total: number }>('/api/presets'),
   /** Projects without photos (photoDataUrl is null); use getProject for the full one. */
-  listProjects: () => request<{ projects: Project[] }>('/api/projects'),
+  listProjects: () => request<{ projects: Project[] }>('/api/projects').then((r) => { projectsCache = r.projects; return r; }),
   getProject: (id: string) => request<{ project: Project }>(`/api/projects/${id}`),
   createProject: (input: ProjectInput) => request<{ project: Project }>('/api/projects', { method: 'POST', body: JSON.stringify(input) }),
   updateProject: (id: string, input: ProjectInput) => request<{ project: Project }>(`/api/projects/${id}`, { method: 'PUT', body: JSON.stringify(input) }),

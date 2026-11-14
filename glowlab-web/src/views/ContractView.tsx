@@ -129,10 +129,9 @@ export default function ContractView({ project, presets, settings, onSigned, onB
     <div>
       <div className="toolbar no-print">
         <button onClick={onBack}>{signed ? '← All projects' : '← Back to quote'}</button>
-        {signed && <button className="primary" onClick={() => { void send(); }} disabled={!pdf}>{pdf ? 'Send to customer' : 'Preparing PDF…'}</button>}
+        {signed && <button className="primary cta" onClick={() => { void send(); }} disabled={!pdf}>{pdf ? 'Send to customer' : 'Preparing PDF…'}</button>}
         {signed && <button onClick={download} disabled={!pdf}>Download PDF</button>}
         {signed && <button onClick={() => window.print()}>Print</button>}
-        {signed && <button className="danger" onClick={() => { void voidIt(); }}>Void contract</button>}
       </div>
       {signed && <p className="signed-banner no-print">✓ Signed by {signed.customerName} on {fmtDate(signed.signedAt)} at {fmtTime(signed.signedAt)}</p>}
       {sendNote && <p className="send-note no-print">{sendNote}</p>}
@@ -192,6 +191,7 @@ export default function ContractView({ project, presets, settings, onSigned, onB
           </div>
         )}
       </section>
+      {signed && <button className="danger no-print void-btn" onClick={() => { void voidIt(); }}>Void contract</button>}
     </div>
   );
 }

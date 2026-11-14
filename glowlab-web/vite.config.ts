@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  // The shared package is CommonJS; pre-bundle it so the dev server can import it.
+  optimizeDeps: { include: ['@glowlab/shared'] },
   build: {
     commonjsOptions: { include: [/glowlab-shared/, /node_modules/] },
   },

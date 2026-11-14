@@ -42,18 +42,22 @@ function ContractTermsSettings() {
 
 const newId = () => `list-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-export default function SettingsView({ onSaved }: { onSaved: (s: PricingSettings) => void }) {
+export default function SettingsView({ initial, onSaved }: { initial: PricingSettings | null; onSaved: (s: PricingSettings) => void }) {
   const { user, logout } = useAuth();
-  const [settings, setSettings] = useState<PricingSettings | null>(null);
-  const [activeId, setActiveId] = useState<string>('');
+  // Start from the settings the app already loaded, so the tab shows instantly.
+  const [settings, setSettings] = useState<PricingSettings | null>(initial);
+  const [activeId, setActiveId] = useState<string>(initial?.profiles[0]?.id ?? '');
   const [type, setType] = useState<InstallType>('seasonal');
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.getSettings().then(({ settings: s }) => { setSettings(s); setActiveId(s.profiles[0].id); }).catch((e: Error) => setError(e.message));
+    api.getSettings().then(({ settings: s }) => {
+      setSettings((cur) => cur ?? s);
+      setActiveId((id) => (s.profiles.some((p) => p.id === id) ? id : s.profiles[0].id));
+    }).catch((e: Error) => setError(e.message));
   }, []);
-  if (!settings) return <p className="muted">{error ?? 'Loading…'}</p>;
+  if (!settings) return error ? <p className="error">{error}</p> : <div className="spinner" aria-label="Loading" />;
 
   const active = settings.profiles.find((p) => p.id === activeId) ?? settings.profiles[0];
   const updateActive = (patch: Partial<PricingProfile>) =>
@@ -96,7 +100,7 @@ export default function SettingsView({ onSaved }: { onSaved: (s: PricingSettings
 
   return (
     <div className="settings">
-      <h2>Pricing settings</h2>
+      <h2>Settings</h2>
       <p className="muted">Signed in as {user?.name} ({user?.email}). Save up to {MAX_PRICING_PROFILES} price lists and pick one on each estimate.</p>
 
       <div className="chips wrap" role="tablist" aria-label="Price lists">
@@ -143,7 +147,7 @@ export default function SettingsView({ onSaved }: { onSaved: (s: PricingSettings
         </div>
       </div>
       <ContractTermsSettings />
-      <button className="danger" onClick={logout}>Log out</button>
+      <button className="danger logout" onClick={logout}>Log out</button>
     </div>
   );
 }

@@ -5,7 +5,8 @@ import {
   DEFAULT_ESTIMATE_OPTIONS, DEFAULT_PRICING, INSTALL_TYPE_LABELS, computeEstimate, getPreset, lineLengthsFeet, money,
   normalizeEstimateOptions, profileFor,
 } from '@glowlab/shared';
-import { api } from '../api';
+import { api, cachedProjects } from '../api';
+import { shortDate } from '../format';
 import { HouseStage } from './DesignerView';
 
 /** Feet traced per kind of line, e.g. [['roofline', 62.4], ['gutter', 30.1]]. */
@@ -59,7 +60,7 @@ function ProjectCard({ p, settings, onOpen, onDelete }: {
           </ul>
           {signed && p.contract ? (
             <div className="card-total">
-              <span className="muted small">signed {new Date(p.contract.signedAt).toLocaleDateString()}</span>
+              <span className="muted small">signed {shortDate(p.contract.signedAt)}</span>
               <strong>{money(p.contract.estimate.total)}</strong>
             </div>
           ) : est && (
@@ -78,7 +79,7 @@ function ProjectCard({ p, settings, onOpen, onDelete }: {
 export default function ProjectsView({ settings, onOpen, onOpenContract }: {
   settings: PricingSettings | null; onOpen: (p: Project) => void; onOpenContract: (p: Project) => void;
 }) {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[] | null>(cachedProjects);
   const [clientName, setClientName] = useState('');
   const [address, setAddress] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -120,10 +121,11 @@ export default function ProjectsView({ settings, onOpen, onOpenContract }: {
       </form>
       {error && <p className="error">{error}</p>}
       <div className="grid" style={{ marginTop: 16 }}>
-        {projects.map((p) => (
+        {projects?.map((p) => (
           <ProjectCard key={p.id} p={p} settings={settings ?? DEFAULT_PRICING} onOpen={() => open(p.id)} onDelete={() => del(p)} />
         ))}
-        {projects.length === 0 && <p className="muted">No designs yet — create your first estimate above.</p>}
+        {projects === null && !error && <div className="spinner" aria-label="Loading" />}
+        {projects?.length === 0 && <p className="muted">No designs yet — create your first estimate above.</p>}
       </div>
     </div>
   );

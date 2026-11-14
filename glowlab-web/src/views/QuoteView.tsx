@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Preset, PricingSettings, Project } from '@glowlab/shared';
 import { INSTALL_TYPE_LABELS, QUOTE_DISCLAIMER, computeEstimate, money, normalizeEstimateOptions, profileFor, rateCardFor } from '@glowlab/shared';
-import { api } from '../api';
+import { api, cachedProjects } from '../api';
+import { useAuth } from '../auth';
 import { HouseStage } from './DesignerView';
 import ContractView from './ContractView';
 
@@ -13,6 +14,7 @@ export default function QuoteView({ project, presets, settings, onPick, onEdit, 
   project: Project | null; presets: Preset[]; settings: PricingSettings;
   onPick: (p: Project) => void; onEdit: (p: Project) => void; onSigned: (p: Project) => void;
 }) {
+  const { user } = useAuth();
   const [night, setNight] = useState(true);
   const [signing, setSigning] = useState(false);
   useEffect(() => { setSigning(false); }, [project?.id]);
@@ -33,15 +35,16 @@ export default function QuoteView({ project, presets, settings, onPick, onEdit, 
       <div className="toolbar no-print">
         <button onClick={() => onEdit(project)}>← Edit design</button>
         <label className="toggle"><input type="checkbox" checked={night} onChange={(e) => setNight(e.target.checked)} /> Night mode</label>
-        <button onClick={() => window.print()}>Print quote</button>
-        <button className="primary" onClick={() => { setSigning(true); window.scrollTo(0, 0); }} disabled={estimate.total <= 0}
+        <button onClick={() => window.print()}>Print</button>
+        <button className="primary cta" onClick={() => { setSigning(true); window.scrollTo(0, 0); }} disabled={estimate.total <= 0}
           title={estimate.total > 0 ? 'Customer reviews and signs the contract on this screen' : 'Price the design first'}>Sign contract →</button>
       </div>
       {estimate.totalFeet === 0 && (
         <p className="error no-print">This project has no lit footage yet. Trace its lines and calibrate it in the designer to price it.</p>
       )}
       <section className="quote">
-        <h2 className="brand"><img src="/icon-192.png" alt="" className="brand-mark" />GlowLab — Holiday Lighting Estimate</h2>
+        <h2 className="brand"><img src="/icon-192.png" alt="" className="brand-mark" />{user?.name || 'GlowLab'}</h2>
+        <h3 className="contract-title">Holiday Lighting Estimate</h3>
         <p><strong>{project.clientName}</strong>{project.address ? ` — ${project.address}` : ''}<br />
           Design: <strong>{preset.name}</strong> — {INSTALL_TYPE_LABELS[opts.installType]} ({opts.installType === 'permanent' ? 'permanent LED' : preset.bulbSize}, {profile.bulbSpacingInches}&quot; spacing)</p>
         <HouseStage project={project} preset={preset} spacingInches={profile.bulbSpacingInches} installType={opts.installType} night={night} />
@@ -75,7 +78,7 @@ export default function QuoteView({ project, presets, settings, onPick, onEdit, 
 }
 
 function QuotePicker({ onPick }: { onPick: (p: Project) => void }) {
-  const [projects, setProjects] = useState<Project[] | null>(null);
+  const [projects, setProjects] = useState<Project[] | null>(() => cachedProjects()?.filter((p) => p.status !== 'won') ?? null);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
 
@@ -91,16 +94,16 @@ function QuotePicker({ onPick }: { onPick: (p: Project) => void }) {
 
   return (
     <div>
-      <h1>Quotes</h1>
+      <h2>Quotes</h2>
       <p className="muted">Pick a project to see its quote, or open a project and click <strong>Quote view</strong>.</p>
       {error && <p className="error">{error}</p>}
-      {!projects && !error && <p className="muted">Loading…</p>}
+      {!projects && !error && <div className="spinner" aria-label="Loading" />}
       {projects?.length === 0 && <p className="muted">No open quotes. Start a design on the Designs tab.</p>}
       <ul className="line-list">
         {projects?.map((p) => (
-          <li key={p.id}>
-            <span style={{ flex: 1 }}><strong>{p.clientName || 'Untitled'}</strong>{p.address ? <span className="muted small"> — {p.address}</span> : null}</span>
-            <button onClick={() => { void pick(p.id); }} disabled={opening !== null}>{opening === p.id ? 'Opening…' : 'View quote'}</button>
+          <li key={p.id} className="tappable" onClick={() => { if (opening === null) void pick(p.id); }}>
+            <span style={{ flex: 1, minWidth: 0 }}><strong>{p.clientName || 'Untitled'}</strong>{p.address ? <span className="muted small"> — {p.address}</span> : null}</span>
+            <button onClick={(e) => { e.stopPropagation(); void pick(p.id); }} disabled={opening !== null}>{opening === p.id ? 'Opening…' : 'View quote'}</button>
           </li>
         ))}
       </ul>
