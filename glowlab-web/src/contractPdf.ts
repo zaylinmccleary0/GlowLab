@@ -132,7 +132,6 @@ export async function buildContractPdf(c: SignedContract, signatureDataUrl: stri
   rule(0, 8);
   const amt = contractAmounts(c);
   for (const l of c.estimate.lines) row(l.label, money(l.amount), { detail: l.detail });
-  if (amt.adjustment !== 0) row('Price adjustment', `${amt.adjustment > 0 ? '+' : '-'}${money(Math.abs(amt.adjustment))}`, { detail: `Agreed contract price vs. the ${money(c.estimate.total)} estimate` });
   text(`${c.estimate.totalFeet} ft of lighting • ${c.estimate.bulbCount} bulbs`, { size: 9.5, color: 'muted', gap: 4 });
   rule(2, 8);
   row('Contract price', money(amt.total), { bold: true, size: 13 });

@@ -68,6 +68,13 @@ export function effectiveRatePerFoot(settings: PricingSettings, options: Estimat
   return options.ratePerFoot ?? rateCardFor(settings, options).ratePerFoot;
 }
 
+/** Price per foot of lighting for this job, including the 2nd-story multiplier. */
+export function lightingRatePerFoot(settings: PricingSettings, rawOptions: EstimateOptions): number {
+  const options = normalizeEstimateOptions(rawOptions);
+  const card = rateCardFor(settings, options);
+  return effectiveRatePerFoot(settings, options) * (options.stories === 2 ? card.secondStoryMultiplier : 1);
+}
+
 /**
  * Checks pricing sent by a client. Returns the cleaned settings, or an error
  * message naming the first bad field.
@@ -138,17 +145,17 @@ export function computeEstimate(
   if (options.stories === 2) { perFoot *= card.secondStoryMultiplier; detail.push(`2nd story ×${card.secondStoryMultiplier}`); }
   perFoot = round2(perFoot);
   const what = permanent ? 'LED' : preset.bulbSize;
-  if (feet > 0) lines.push({ label: `${preset.name} — ${INSTALL_TYPE_LABELS[options.installType]} lighting (${what})`, detail: detail.join(', '), amount: perFoot });
+  if (feet > 0) lines.push({ label: `${preset.name} — ${INSTALL_TYPE_LABELS[options.installType]} lighting (${what})`, detail: detail.join(', '), amount: perFoot, kind: 'lighting' });
 
   const add = (count: number, unit: number, label: string) => {
-    if (count > 0) lines.push({ label, detail: `${count} × ${money(unit)}`, amount: round2(count * unit) });
+    if (count > 0) lines.push({ label, detail: `${count} × ${money(unit)}`, amount: round2(count * unit), kind: 'addon' });
   };
   add(options.addOns.wreaths, card.wreathPrice, 'Wreath');
   add(options.addOns.pathwayStakes, card.pathwayStakePrice, 'Pathway stake light');
   add(options.addOns.treeWraps, card.treeWrapPrice, 'Tree wrap');
   add(options.addOns.timers, card.timerPrice, 'Timer');
-  if (takedown > 0) lines.push({ label: 'Takedown / reinstall', detail: 'flat fee', amount: round2(takedown) });
-  if (options.steepRoof) lines.push({ label: 'Steep / difficult roof fee', detail: 'flat fee', amount: round2(card.steepRoofFee) });
+  if (takedown > 0) lines.push({ label: 'Takedown / reinstall', detail: 'flat fee', amount: round2(takedown), kind: 'takedown' });
+  if (options.steepRoof) lines.push({ label: 'Steep / difficult roof fee', detail: 'flat fee', amount: round2(card.steepRoofFee), kind: 'fee' });
 
   const subtotal = round2(lines.reduce((s, l) => s + l.amount, 0));
   const total = subtotal;

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import type { EstimateOptions, Project, SignedContract } from '@glowlab/shared';
 import {
-  DEFAULT_ESTIMATE_OPTIONS, computeEstimate, contractTermsFor, defaultDeposit, getPreset, normalizeEstimateOptions, profileFor, round2, validateSignInput,
+  DEFAULT_ESTIMATE_OPTIONS, computeEstimate, contractBreakdown, contractTermsFor, defaultDeposit, getPreset, lightingRatePerFoot, normalizeEstimateOptions, profileFor, round2, validateSignInput,
 } from '@glowlab/shared';
 import {
   deleteProject, getContractTerms, getProject, getSettings, insertProject, listProjects, signProject, updateProject, voidContract, type ProjectInput,
@@ -112,9 +112,12 @@ router.post('/:id/sign', async (req: Request, res: Response) => {
   if (!preset) { res.status(400).json({ error: 'Project has an unknown preset' }); return; }
   const settings = await getSettings(req.currentUser.id);
   const options = normalizeEstimateOptions(project.estimateOptions);
-  const estimate = computeEstimate(project, preset, settings, options);
-  // The contract price is what you agreed with the customer; without one, it's the estimate.
-  const contractTotal = input.contractTotal ?? estimate.total;
+  // The design's estimate with the installer's edits (feet, bulbs, takedown, price) is what gets signed.
+  const { breakdown: estimate, error: editError } = contractBreakdown(computeEstimate(project, preset, settings, options), lightingRatePerFoot(settings, options), {
+    feet: input.feet, bulbCount: input.bulbCount, takedownIncluded: input.takedownIncluded, takedownAmount: input.takedownAmount, contractTotal: input.contractTotal,
+  });
+  if (editError) { res.status(400).json({ error: editError }); return; }
+  const contractTotal = estimate.total;
   if (!(contractTotal > 0)) {
     res.status(400).json({ error: 'Set a contract price first (this design has no estimate yet).' }); return;
   }

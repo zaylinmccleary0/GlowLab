@@ -155,11 +155,23 @@ let bigDeposit = false;
 try { await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, contractTotal: 400, depositDue: 500 } }); } catch { bigDeposit = true; }
 check('deposit over the price rejected', bigDeposit, true);
 const { project: custom } = await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, contractTotal: 450, depositDue: 100 } });
-check('custom contract price kept', [custom.contract.contractTotal, custom.contract.depositDue, custom.contract.balanceDue, custom.contract.estimate.total], [450, 100, 350, 375]);
+check('custom contract price kept', [custom.contract.contractTotal, custom.contract.depositDue, custom.contract.balanceDue, custom.contract.estimate.total], [450, 100, 350, 450]);
+check('custom price goes into the lighting line (no adjustment line)', custom.contract.estimate.lines.map((l) => l.amount), [450]);
 const { project: customHalf } = await req(`/api/projects/${cq.id}/void`, { method: 'POST', token, body: {} })
   .then(() => req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, contractTotal: 999.98 } }));
 check('custom price, default deposit is 50%', [customHalf.contract.contractTotal, customHalf.contract.depositDue], [999.98, 499.99]);
+// Contract edits: feet re-price the lighting, bulbs are just shown, takedown can be switched on with its own price
+const resign = async (body) => { await req(`/api/projects/${cq.id}/void`, { method: 'POST', token, body: {} }); return (await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, ...body } })).project.contract; };
+const byFeet = await resign({ feet: 60, bulbCount: 77 });
+check('edited feet re-price the lighting (60 ft x $7.50)', [byFeet.estimate.totalFeet, byFeet.contractTotal, byFeet.estimate.bulbCount], [60, 450, 77]);
+const withTakedown = await resign({ takedownIncluded: true, takedownAmount: 120 });
+check('takedown switched on with its own price', [withTakedown.contractTotal, withTakedown.estimate.lines.map((l) => l.label)], [495, [withTakedown.estimate.lines[0].label, 'Takedown / reinstall']]);
+const noTakedown = await resign({ takedownIncluded: false, takedownAmount: 120 });
+check('takedown switched off is left off', [noTakedown.contractTotal, noTakedown.estimate.lines.length], [375, 1]);
 await req(`/api/projects/${cq.id}/void`, { method: 'POST', token, body: {} });
+let underOthers = false;
+try { await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, takedownIncluded: true, takedownAmount: 120, contractTotal: 100 } }); } catch { underOthers = true; }
+check('price below the other items rejected', underOthers, true);
 await req(`/api/projects/${cq.id}`, { method: 'DELETE', token });
 await req('/api/settings/contract-terms', { method: 'PUT', token, body: { terms: null } });
 

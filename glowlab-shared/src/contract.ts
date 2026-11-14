@@ -1,4 +1,5 @@
-import type { SignContractInput, SignedContract } from './types';
+import type { EstimateBreakdown, EstimateLine, SignContractInput, SignedContract } from './types';
+import { money } from './pricing';
 
 /**
  * Starter contract terms. Each business edits these in Settings; they are copied into
@@ -42,6 +43,70 @@ export function contractAmounts(c: SignedContract): { total: number; deposit: nu
 /** The default deposit for a contract price: 50%. */
 export function defaultDeposit(total: number): number { return cents(total / 2); }
 
+/** What can be changed on the contract before signing (all optional: blank = from the design). */
+export interface ContractEdits {
+  feet?: number; bulbCount?: number;
+  takedownIncluded?: boolean; takedownAmount?: number;
+  contractTotal?: number;
+}
+
+/** A lighting line's label/detail when the design didn't have one (no traced footage). */
+const BLANK_LIGHTING: EstimateLine = { label: 'Holiday lighting installation', detail: '', amount: 0, kind: 'lighting' };
+
+/**
+ * The price breakdown printed on the contract: the design's estimate with the installer's edits.
+ * Feet re-price the lighting line at ratePerFoot; the takedown line is added, changed or removed;
+ * a typed contract price is absorbed into the lighting line so the lines always add up.
+ */
+export function contractBreakdown(base: EstimateBreakdown, ratePerFoot: number, edits: ContractEdits): { breakdown: EstimateBreakdown; error?: string } {
+  const feet = edits.feet ?? base.totalFeet;
+  const bulbCount = edits.bulbCount ?? base.bulbCount;
+  const baseLighting = base.lines.find((l) => l.kind === 'lighting') ?? (base.totalFeet > 0 ? base.lines[0] : undefined);
+  const others = base.lines.filter((l) => l !== baseLighting && l.kind !== 'takedown');
+  const baseTakedown = base.lines.find((l) => l.kind === 'takedown');
+
+  let lighting: EstimateLine | null = null;
+  if (feet > 0 || edits.contractTotal !== undefined) {
+    const from = baseLighting ?? BLANK_LIGHTING;
+    const feetChanged = edits.feet !== undefined && Math.abs(edits.feet - base.totalFeet) >= 0.005;
+    const amount = feetChanged || !baseLighting ? cents(feet * ratePerFoot) : from.amount;
+    const rest = from.detail.split(', ').slice(1).join(', ');
+    const detail = feet > 0 ? [`${cents(feet)} ft × ${money(ratePerFoot)}/ft`, rest].filter(Boolean).join(', ') : rest;
+    lighting = { ...from, kind: 'lighting', amount, detail };
+  }
+
+  const takedownOn = edits.takedownIncluded ?? Boolean(baseTakedown);
+  const takedownAmount = cents(edits.takedownAmount ?? baseTakedown?.amount ?? 0);
+  const takedown: EstimateLine | null = takedownOn && takedownAmount > 0
+    ? { label: 'Takedown / reinstall', detail: 'flat fee', amount: takedownAmount, kind: 'takedown' } : null;
+
+  // With takedown charged on its own line, the lighting line can't also say it's included.
+  if (takedown && lighting) lighting.detail = lighting.detail.replace('seasonal (install + takedown included)', 'seasonal install');
+
+  // Keep the design's order: lighting first, add-ons, takedown, then fees.
+  const addons = others.filter((l) => l.kind !== 'fee');
+  const fees = others.filter((l) => l.kind === 'fee');
+  const lines = [lighting, ...addons, takedown, ...fees].filter((l): l is EstimateLine => Boolean(l));
+  const sumOthers = cents(lines.filter((l) => l !== lighting).reduce((s, l) => s + l.amount, 0));
+
+  if (edits.contractTotal !== undefined && lighting) {
+    const lightingAmount = cents(edits.contractTotal - sumOthers);
+    if (lightingAmount < 0) {
+      return { breakdown: base, error: `The contract price can't be less than the other items (${money(sumOthers)}).` };
+    }
+    if (Math.abs(lightingAmount - lighting.amount) >= 0.005) {
+      // A negotiated price: show the footage but not a per-foot rate that no longer matches.
+      lighting.amount = lightingAmount;
+      lighting.detail = [feet > 0 ? `${cents(feet)} ft of lighting` : '', lighting.detail.split(', ').slice(1).join(', ')].filter(Boolean).join(', ');
+    }
+  }
+
+  const total = cents(lines.reduce((s, l) => s + l.amount, 0));
+  return {
+    breakdown: { lines, bulbCount, clipCount: bulbCount, totalFeet: cents(feet), subtotal: total, total, depositDue: defaultDeposit(total) },
+  };
+}
+
 /** The terms with the business name filled in. */
 export function contractTermsFor(terms: string | null | undefined, businessName: string): string {
   return (terms && terms.trim() ? terms : DEFAULT_CONTRACT_TERMS).split('{business}').join(businessName || 'The installer');
@@ -67,6 +132,18 @@ export function validateSignInput(raw: unknown): { input?: SignContractInput; er
     if (total > MAX_CONTRACT_TOTAL) return { error: 'The contract price looks too high — check it for typos' };
     input.contractTotal = cents(total);
   }
+  const num = (key: string, max: number, label: string): string | null => {
+    const v = b[key];
+    if (v === undefined || v === null || v === '') return null;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) return `${label} must be a number of 0 or more`;
+    if (n > max) return `${label} looks too high — check it for typos`;
+    (input as unknown as Record<string, number>)[key] = key === 'bulbCount' ? Math.round(n) : cents(n);
+    return null;
+  };
+  const numError = num('feet', 100_000, 'Feet of lighting') ?? num('bulbCount', 100_000, 'The bulb count') ?? num('takedownAmount', MAX_CONTRACT_TOTAL, 'The takedown / reinstall price');
+  if (numError) return { error: numError };
+  if (typeof b.takedownIncluded === 'boolean') input.takedownIncluded = b.takedownIncluded;
   if (b.depositDue !== undefined && b.depositDue !== null) {
     const deposit = Number(b.depositDue);
     if (!Number.isFinite(deposit) || deposit < 0) return { error: "The deposit can't be negative" };

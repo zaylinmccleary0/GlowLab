@@ -44,7 +44,8 @@ export interface EstimateOptions {
   ratePerFoot: number | null;
   addOns: EstimateAddOns;
 }
-export interface EstimateLine { label: string; detail: string; amount: number; }
+export type EstimateLineKind = 'lighting' | 'addon' | 'takedown' | 'fee';
+export interface EstimateLine { label: string; detail: string; amount: number; kind?: EstimateLineKind; }
 export interface EstimateBreakdown {
   lines: EstimateLine[]; bulbCount: number; clipCount: number; totalFeet: number;
   subtotal: number; total: number; depositDue: number;
@@ -96,6 +97,13 @@ export interface SignContractInput {
   contractTotal?: number;
   /** Deposit due at signing. Defaults to 50% of the contract price. */
   depositDue?: number;
+  /** Feet of lighting on the contract (defaults to the traced footage). Re-prices the lighting line. */
+  feet?: number;
+  /** Bulb count shown on the contract (defaults to the design's count). */
+  bulbCount?: number;
+  /** Whether the takedown / reinstall line is on the contract, and its amount. Defaults to the price list. */
+  takedownIncluded?: boolean;
+  takedownAmount?: number;
 }
 export interface PublicUser { id: string; name: string; email: string; }
 export interface BulbPosition { point: Point; angleDeg: number; index: number; }
