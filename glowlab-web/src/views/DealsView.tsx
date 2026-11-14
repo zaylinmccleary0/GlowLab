@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Project } from '@glowlab/shared';
-import { getPreset, money, round2 } from '@glowlab/shared';
+import { contractAmounts, getPreset, money, round2 } from '@glowlab/shared';
 import { api, cachedProjects } from '../api';
 import { shortDate } from '../format';
 
@@ -26,9 +26,9 @@ export default function DealsView({ onOpen }: { onOpen: (p: Project) => void }) 
   };
 
   const sum = (f: (p: Project) => number) => round2((deals ?? []).reduce((n, p) => n + f(p), 0));
-  const value = sum((p) => p.contract!.estimate.total);
-  const deposits = sum((p) => p.contract!.estimate.depositDue);
-  const balance = sum((p) => p.contract!.balanceDue);
+  const value = sum((p) => contractAmounts(p.contract!).total);
+  const deposits = sum((p) => contractAmounts(p.contract!).deposit);
+  const balance = sum((p) => contractAmounts(p.contract!).balance);
 
   return (
     <div>
@@ -40,7 +40,7 @@ export default function DealsView({ onOpen }: { onOpen: (p: Project) => void }) 
         <div className="stat-row">
           <div className="stat"><span className="stat-label">Closed deals</span><strong>{deals.length}</strong></div>
           <div className="stat"><span className="stat-label">Contract value</span><strong>{money(value)}</strong></div>
-          <div className="stat"><span className="stat-label">Deposits (50%)</span><strong>{money(deposits)}</strong></div>
+          <div className="stat"><span className="stat-label">Deposits</span><strong>{money(deposits)}</strong></div>
           <div className="stat"><span className="stat-label">Balance on completion</span><strong>{money(balance)}</strong></div>
         </div>
       )}
@@ -58,8 +58,8 @@ export default function DealsView({ onOpen }: { onOpen: (p: Project) => void }) 
                 <span className="small">{getPreset(p.presetId)?.name ?? c.presetName} • signed {shortDate(c.signedAt)} by {c.customerName}</span>
               </div>
               <div className="deal-money">
-                <strong>{money(c.estimate.total)}</strong>
-                <span className="muted small">deposit {money(c.estimate.depositDue)}</span>
+                <strong>{money(contractAmounts(c).total)}</strong>
+                <span className="muted small">deposit {money(contractAmounts(c).deposit)}</span>
               </div>
               <button onClick={(e) => { e.stopPropagation(); void open(p.id); }} disabled={opening !== null}>{opening === p.id ? 'Opening…' : 'View contract'}</button>
             </li>

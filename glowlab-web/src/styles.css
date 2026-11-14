@@ -225,7 +225,8 @@ button.step { width: 36px; height: 36px; padding: 0; border-radius: 50%; font-si
 }
 
 /* Phones */
-@media (max-width: 760px) {
+/* Phones and tablets (iPad): the bottom tab bar */
+@media (max-width: 760px), (any-pointer: coarse) and (max-width: 1366px) {
   input, select, textarea { font-size: 16px; } /* 16px+ stops iPhones zooming the page when a field is tapped */
   main { padding: 16px 16px calc(92px + env(safe-area-inset-bottom)); }
   h2 { font-size: 24px; margin: 4px 0 12px; }
@@ -239,6 +240,14 @@ button.step { width: 36px; height: 36px; padding: 0; border-radius: 50%; font-si
   .tabbar .nav-icon { display: block; width: 24px; height: 24px; transition: transform .2s ease; }
   .tabbar button.nav.active .nav-icon { transform: translateY(-2px) scale(1.06); stroke-width: 2.1; }
   .tabbar button.nav:active { transform: scale(.92); }
+}
+/* Wide tablets: keep the tabs together in the middle of the bar */
+@media (min-width: 761px) and (any-pointer: coarse) and (max-width: 1366px) {
+  .tabbar { padding-left: max(8px, calc(50% - 300px)); padding-right: max(8px, calc(50% - 300px)); }
+  main { padding-left: 24px; padding-right: 24px; }
+}
+/* Phones */
+@media (max-width: 760px) {
 
   .designer-bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
   .designer-bar .back { grid-area: 1 / 1; }
@@ -265,3 +274,17 @@ button.step { width: 36px; height: 36px; padding: 0; border-radius: 50%; font-si
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
 }
 @media print { .tabbar, .spinner { display: none !important; } .screen { animation: none; } }
+
+/* Contract price box (signing screen, for the installer) */
+.price-setter { background: var(--card); border: 1px solid var(--gold); border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 8px; }
+.price-setter-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.price-setter h3 { margin: 0; font-size: 17px; }
+.price-setter p { margin: 0; }
+.price-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.price-fields input { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.price-summary strong { color: var(--gold); }
+.price-summary .link { padding: 0 4px; min-height: 0; }
+.crash { max-width: 460px; margin: 40px auto; text-align: center; align-items: center; }
+.crash h3 { margin: 4px 0 0; }
+.crash p { margin: 0; }
+.crash-detail { font-family: ui-monospace, monospace; word-break: break-word; }

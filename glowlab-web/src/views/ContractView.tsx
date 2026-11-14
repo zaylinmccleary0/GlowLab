@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EstimateBreakdown, Preset, PricingSettings, Project } from '@glowlab/shared';
 import {
-  INSTALL_TYPE_LABELS, computeEstimate, contractTermsFor, money, normalizeEstimateOptions, profileFor, round2,
+  INSTALL_TYPE_LABELS, MAX_CONTRACT_TOTAL, computeEstimate, contractAmounts, contractTermsFor, defaultDeposit, money, normalizeEstimateOptions, profileFor, round2,
 } from '@glowlab/shared';
 import { api } from '../api';
 import { useAuth } from '../auth';
@@ -12,16 +12,25 @@ import { buildContractPdf, contractFileName, downloadBlob, snapshotStage } from 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
-function PriceTable({ estimate, balanceDue }: { estimate: EstimateBreakdown; balanceDue: number }) {
+/** Parses a typed dollar amount ("1,250.50", "$900") — NaN if it isn't one. */
+const parseMoney = (s: string) => { const t = s.replace(/[$,\s]/g, ''); return t === '' ? NaN : Number(t); };
+
+function PriceTable({ estimate, total, deposit, balance }: { estimate: EstimateBreakdown; total: number; deposit: number; balance: number }) {
+  const adjustment = round2(total - estimate.total);
+  const halfDeposit = Math.abs(deposit - defaultDeposit(total)) < 0.005;
   return (
     <>
       <table className="estimate-table"><tbody>
         {estimate.lines.map((l, i) => <tr key={i}><td>{l.label}<br /><span className="muted small">{l.detail}</span></td><td className="num">{money(l.amount)}</td></tr>)}
+        {adjustment !== 0 && (
+          <tr><td>Price adjustment<br /><span className="muted small">Agreed contract price vs. the {money(estimate.total)} estimate</span></td>
+            <td className="num">{adjustment > 0 ? '+' : '−'}{money(Math.abs(adjustment))}</td></tr>
+        )}
       </tbody></table>
       <p>{estimate.totalFeet} ft of lighting • {estimate.bulbCount} bulbs</p>
-      <p className="total-row"><span>Contract total</span><span>{money(estimate.total)}</span></p>
-      <p className="total-row deposit"><span>Deposit due at signing (50%)</span><span>{money(estimate.depositDue)}</span></p>
-      <p className="total-row"><span>Balance due on completion</span><span>{money(balanceDue)}</span></p>
+      <p className="total-row"><span>Contract price</span><span>{money(total)}</span></p>
+      <p className="total-row deposit"><span>Deposit due at signing{halfDeposit ? ' (50%)' : ''}</span><span>{money(deposit)}</span></p>
+      <p className="total-row"><span>Balance due on completion</span><span>{money(balance)}</span></p>
     </>
   );
 }
@@ -42,6 +51,9 @@ export default function ContractView({ project, presets, settings, onSigned, onB
   const [customerEmail, setCustomerEmail] = useState('');
   const [signature, setSignature] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
+  // The price the customer signs for. Blank = the estimate; blank deposit = 50% of the price.
+  const [priceText, setPriceText] = useState('');
+  const [depositText, setDepositText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const signed = project.status === 'won' && project.contract ? project.contract : null;
@@ -73,7 +85,8 @@ export default function ContractView({ project, presets, settings, onSigned, onB
     setSendNote(null);
     const name = contractFileName(signed);
     const file = new File([pdf], name, { type: 'application/pdf' });
-    const message = `Hi ${signed.customerName}, here is your signed holiday lighting agreement with ${signed.businessName}. Total ${money(signed.estimate.total)}, deposit ${money(signed.estimate.depositDue)}. Thank you!`;
+    const amounts = contractAmounts(signed);
+    const message = `Hi ${signed.customerName}, here is your signed holiday lighting agreement with ${signed.businessName}. Total ${money(amounts.total)}, deposit ${money(amounts.deposit)}. Thank you!`;
     const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
     if (nav.share && nav.canShare?.({ files: [file] })) {
       try {
@@ -108,15 +121,29 @@ export default function ContractView({ project, presets, settings, onSigned, onB
   const liveEstimate = computeEstimate(project, preset, settings, opts);
 
   const estimate = signed?.estimate ?? liveEstimate;
-  const balanceDue = signed?.balanceDue ?? round2(liveEstimate.total - liveEstimate.depositDue);
+  const typedPrice = parseMoney(priceText);
+  const typedDeposit = parseMoney(depositText);
+  const draftTotal = priceText.trim() === '' ? liveEstimate.total : typedPrice;
+  const draftDeposit = depositText.trim() === '' ? defaultDeposit(Number.isFinite(draftTotal) ? draftTotal : 0) : typedDeposit;
+  const priceProblem = !Number.isFinite(draftTotal) ? 'Enter the contract price as a number, like 1250.'
+    : draftTotal <= 0 ? (liveEstimate.total > 0 ? 'The contract price must be more than $0.' : 'This design has no estimate yet. Type the contract price you agreed on.')
+    : draftTotal > MAX_CONTRACT_TOTAL ? 'That price looks too high — check it for typos.'
+    : !Number.isFinite(draftDeposit) || draftDeposit < 0 ? 'Enter the deposit as a number, like 500.'
+    : draftDeposit > draftTotal ? "The deposit can't be more than the contract price."
+    : null;
+  const amounts = signed ? contractAmounts(signed)
+    : { total: priceProblem ? 0 : round2(draftTotal), deposit: priceProblem ? 0 : round2(draftDeposit), balance: priceProblem ? 0 : round2(draftTotal - draftDeposit) };
   const businessName = signed?.businessName ?? user?.name ?? '';
-  const canSign = !signed && Boolean(terms) && customerName.trim() !== '' && Boolean(signature) && agreed && !busy && liveEstimate.total > 0;
+  const canSign = !signed && Boolean(terms) && customerName.trim() !== '' && Boolean(signature) && agreed && !busy && !priceProblem;
 
   const sign = async () => {
     if (!canSign || !signature) return;
     setBusy(true); setError(null);
     try {
-      const { project: p } = await api.signContract(project.id, { customerName, customerPhone, customerEmail, signatureDataUrl: signature, agreed });
+      const { project: p } = await api.signContract(project.id, {
+        customerName, customerPhone, customerEmail, signatureDataUrl: signature, agreed,
+        contractTotal: amounts.total, depositDue: amounts.deposit,
+      });
       onSigned?.(p);
     } catch (e) { setError((e as Error).message); setBusy(false); }
   };
@@ -138,6 +165,32 @@ export default function ContractView({ project, presets, settings, onSigned, onB
       {pdfError && <p className="error no-print">{pdfError}</p>}
       {error && <p className="error no-print">{error}</p>}
 
+      {!signed && (
+        <div className="price-setter no-print">
+          <div className="price-setter-head">
+            <h3>Contract price</h3>
+            <span className="muted small">Estimate {money(liveEstimate.total)}</span>
+          </div>
+          <p className="muted small">The design gives an estimate. Set the price the customer is actually signing for — the agreement below updates as you type.</p>
+          <div className="price-fields">
+            <label>Contract price ($)
+              <input inputMode="decimal" value={priceText} onChange={(e) => { setPriceText(e.target.value); setAgreed(false); }}
+                placeholder={liveEstimate.total > 0 ? liveEstimate.total.toFixed(2) : 'e.g. 1250'} aria-label="Contract price" />
+            </label>
+            <label>Deposit at signing ($)
+              <input inputMode="decimal" value={depositText} onChange={(e) => { setDepositText(e.target.value); setAgreed(false); }}
+                placeholder={Number.isFinite(draftTotal) && draftTotal > 0 ? `${defaultDeposit(draftTotal).toFixed(2)} (50%)` : '50% of the price'} aria-label="Deposit at signing" />
+            </label>
+          </div>
+          {priceProblem ? <p className="error small">{priceProblem}</p> : (
+            <p className="small price-summary">
+              Customer signs for <strong>{money(amounts.total)}</strong>: {money(amounts.deposit)} now, {money(amounts.balance)} on completion.
+              {(priceText || depositText) && <> <button type="button" className="link" onClick={() => { setPriceText(''); setDepositText(''); setAgreed(false); }}>Use the estimate</button></>}
+            </p>
+          )}
+        </div>
+      )}
+
       <section className="quote contract" ref={sectionRef}>
         <h2 className="brand"><img src="/icon-192.png" alt="" className="brand-mark" />{businessName || 'GlowLab'}</h2>
         <h3 className="contract-title">Holiday Lighting Installation Agreement</h3>
@@ -149,7 +202,7 @@ export default function ContractView({ project, presets, settings, onSigned, onB
         </p>
         <HouseStage project={project} preset={preset} spacingInches={signed?.bulbSpacingInches ?? profile.bulbSpacingInches}
           installType={signed?.installType ?? opts.installType} night />
-        <PriceTable estimate={estimate} balanceDue={balanceDue} />
+        <PriceTable estimate={estimate} total={amounts.total} deposit={amounts.deposit} balance={amounts.balance} />
 
         <h3 className="contract-subtitle">Terms</h3>
         {signed || terms ? <div className="contract-terms">{signed?.terms ?? terms}</div> : <p className="muted">Loading terms…</p>}
@@ -181,12 +234,11 @@ export default function ContractView({ project, presets, settings, onSigned, onB
             <SignaturePad onChange={setSignature} disabled={busy} />
             <label className="agree">
               <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-              <span>I have read and agree to this agreement, including the {money(estimate.total)} total and the {money(estimate.depositDue)} deposit, and I agree to sign it electronically.</span>
+              <span>I have read and agree to this agreement, including the {money(amounts.total)} contract price and the {money(amounts.deposit)} deposit, and I agree to sign it electronically.</span>
             </label>
-            {liveEstimate.total <= 0 && <p className="error">This quote has no priced lighting yet. Trace and calibrate the design first.</p>}
             <button className="primary big" onClick={() => { void sign(); }} disabled={!canSign}>{busy ? 'Signing…' : 'Sign contract'}</button>
-            {!canSign && !busy && liveEstimate.total > 0 && (
-              <p className="muted small">{!customerName.trim() ? 'Enter the customer’s name. ' : ''}{!signature ? 'Sign in the box. ' : ''}{!agreed ? 'Tick the box to agree.' : ''}</p>
+            {!canSign && !busy && (
+              <p className="muted small">{priceProblem ? 'Set the contract price at the top. ' : ''}{!customerName.trim() ? 'Enter the customer’s name. ' : ''}{!signature ? 'Sign in the box. ' : ''}{!agreed ? 'Tick the box to agree.' : ''}</p>
             )}
           </div>
         )}

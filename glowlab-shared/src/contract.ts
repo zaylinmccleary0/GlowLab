@@ -1,4 +1,4 @@
-import type { SignContractInput } from './types';
+import type { SignContractInput, SignedContract } from './types';
 
 /**
  * Starter contract terms. Each business edits these in Settings; they are copied into
@@ -27,6 +27,21 @@ export const MAX_CONTRACT_TERMS_LENGTH = 20_000;
 /** Drawn signatures are small PNGs; this cap keeps a stray huge upload out. */
 export const MAX_SIGNATURE_LENGTH = 400_000;
 
+/** Highest contract price accepted (keeps typos like an extra zero or two from slipping through). */
+export const MAX_CONTRACT_TOTAL = 1_000_000;
+
+const cents = (n: number) => Math.round(n * 100) / 100;
+
+/** What the customer owes under a signed contract: total, deposit at signing, and balance on completion. */
+export function contractAmounts(c: SignedContract): { total: number; deposit: number; balance: number; adjustment: number } {
+  const total = typeof c.contractTotal === 'number' ? c.contractTotal : c.estimate.total;
+  const deposit = typeof c.depositDue === 'number' ? c.depositDue : c.estimate.depositDue;
+  return { total, deposit, balance: cents(total - deposit), adjustment: cents(total - c.estimate.total) };
+}
+
+/** The default deposit for a contract price: 50%. */
+export function defaultDeposit(total: number): number { return cents(total / 2); }
+
 /** The terms with the business name filled in. */
 export function contractTermsFor(terms: string | null | undefined, businessName: string): string {
   return (terms && terms.trim() ? terms : DEFAULT_CONTRACT_TERMS).split('{business}').join(businessName || 'The installer');
@@ -45,5 +60,17 @@ export function validateSignInput(raw: unknown): { input?: SignContractInput; er
   if (typeof signatureDataUrl !== 'string' || !signatureDataUrl.startsWith('data:image/png;base64,')) return { error: 'A signature is required' };
   if (signatureDataUrl.length > MAX_SIGNATURE_LENGTH) return { error: 'The signature image is too large' };
   if (b.agreed !== true) return { error: 'The customer must agree to the terms' };
-  return { input: { customerName, customerPhone, customerEmail, signatureDataUrl, agreed: true } };
+  const input: SignContractInput = { customerName, customerPhone, customerEmail, signatureDataUrl, agreed: true };
+  if (b.contractTotal !== undefined && b.contractTotal !== null) {
+    const total = Number(b.contractTotal);
+    if (!Number.isFinite(total) || total <= 0) return { error: 'The contract price must be more than $0' };
+    if (total > MAX_CONTRACT_TOTAL) return { error: 'The contract price looks too high — check it for typos' };
+    input.contractTotal = cents(total);
+  }
+  if (b.depositDue !== undefined && b.depositDue !== null) {
+    const deposit = Number(b.depositDue);
+    if (!Number.isFinite(deposit) || deposit < 0) return { error: "The deposit can't be negative" };
+    input.depositDue = cents(deposit);
+  }
+  return { input };
 }

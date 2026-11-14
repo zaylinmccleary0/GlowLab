@@ -10,6 +10,7 @@ import QuoteView from './views/QuoteView';
 import ContractView from './views/ContractView';
 import DealsView from './views/DealsView';
 import UpdateBanner from './UpdateBanner';
+import ErrorBoundary from './ErrorBoundary';
 
 /** Designs = every design/estimate; Quotes = one quote at a time; Projects = closed deals (signed contracts). */
 type Tab = 'projects' | 'quotes' | 'deals' | 'settings';
@@ -113,7 +114,7 @@ function Shell() {
         <span className="muted small user-name">{user.name}</span>
       </header>
       <main>
-        <div className="screen" key={screenKey}>
+        <div className="screen" key={screenKey}><ErrorBoundary>
           {open && settings ? (
             <DesignerView key={open.id} initial={open} presets={presets} settings={settings} onBack={() => { setOpen(null); top(); }}
               onQuote={(p) => { setQuoteProject(p); setOpen(null); setTab('quotes'); top(); }} />
@@ -136,7 +137,7 @@ function Shell() {
           ) : (
             <SettingsView initial={settings} onSaved={setSettings} />
           )}
-        </div>
+        </ErrorBoundary></div>
       </main>
     </div>
   );

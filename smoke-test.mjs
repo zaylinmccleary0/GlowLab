@@ -146,6 +146,20 @@ check('price change leaves contract alone', (await req(`/api/projects/${cq.id}`,
 await req('/api/settings', { method: 'PUT', token, body: DEFAULTS });
 const { project: voided } = await req(`/api/projects/${cq.id}/void`, { method: 'POST', token, body: {} });
 check('void returns it to a quote', [voided.status, voided.contract, voided.signatureDataUrl], ['quote', null, null]);
+check('default contract price = estimate, deposit 50%', [won.contract.contractTotal, won.contract.depositDue], [375, 187.5]);
+// Custom contract price: the customer signs for an agreed price, not the estimate
+let badPrice = false;
+try { await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, contractTotal: -5 } }); } catch { badPrice = true; }
+check('negative contract price rejected', badPrice, true);
+let bigDeposit = false;
+try { await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, contractTotal: 400, depositDue: 500 } }); } catch { bigDeposit = true; }
+check('deposit over the price rejected', bigDeposit, true);
+const { project: custom } = await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, contractTotal: 450, depositDue: 100 } });
+check('custom contract price kept', [custom.contract.contractTotal, custom.contract.depositDue, custom.contract.balanceDue, custom.contract.estimate.total], [450, 100, 350, 375]);
+const { project: customHalf } = await req(`/api/projects/${cq.id}/void`, { method: 'POST', token, body: {} })
+  .then(() => req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, contractTotal: 999.98 } }));
+check('custom price, default deposit is 50%', [customHalf.contract.contractTotal, customHalf.contract.depositDue], [999.98, 499.99]);
+await req(`/api/projects/${cq.id}/void`, { method: 'POST', token, body: {} });
 await req(`/api/projects/${cq.id}`, { method: 'DELETE', token });
 await req('/api/settings/contract-terms', { method: 'PUT', token, body: { terms: null } });
 

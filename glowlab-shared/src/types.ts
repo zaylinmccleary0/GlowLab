@@ -76,7 +76,12 @@ export interface SignedContract {
   businessName: string;
   clientName: string; address: string;
   presetName: string; installType: InstallType; bulbSpacingInches: number;
+  /** The estimate from the design, kept for reference (line items). */
   estimate: EstimateBreakdown;
+  /** The price the customer signed for (can differ from the estimate). Missing on contracts signed before this existed: use contractAmounts(). */
+  contractTotal?: number;
+  /** Deposit due at signing. Missing on older contracts: use contractAmounts(). */
+  depositDue?: number;
   /** Balance due on completion (total minus deposit). */
   balanceDue: number;
   terms: string;
@@ -87,6 +92,10 @@ export interface SignedContract {
 export interface SignContractInput {
   customerName: string; customerPhone: string; customerEmail: string;
   signatureDataUrl: string; agreed: boolean;
+  /** The price the customer signs for. Defaults to the estimate total. */
+  contractTotal?: number;
+  /** Deposit due at signing. Defaults to 50% of the contract price. */
+  depositDue?: number;
 }
 export interface PublicUser { id: string; name: string; email: string; }
 export interface BulbPosition { point: Point; angleDeg: number; index: number; }

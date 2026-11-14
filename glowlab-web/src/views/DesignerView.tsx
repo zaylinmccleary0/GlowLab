@@ -478,8 +478,8 @@ export default function DesignerView({ initial, presets, settings, onBack, onQuo
                 {estimate.lines.map((l, i) => <tr key={i}><td>{l.label}<br /><span className="muted small">{l.detail}</span></td><td className="num">{money(l.amount)}</td></tr>)}
               </tbody></table>
               <p className="small muted">{estimate.totalFeet} ft • {estimate.bulbCount} bulbs • {estimate.clipCount} clips</p>
-              <p className="total-row"><span>Total</span><span>{money(estimate.total)}</span></p>
-              <p className="total-row deposit"><span>Deposit due (50%)</span><span>{money(estimate.depositDue)}</span></p>
+              <p className="total-row"><span>Estimated total</span><span>{money(estimate.total)}</span></p>
+              <p className="total-row deposit"><span>Estimated deposit (50%)</span><span>{money(estimate.depositDue)}</span></p>
             </>
           )}
         </aside>

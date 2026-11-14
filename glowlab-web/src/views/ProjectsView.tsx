@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { LineKind, PricingSettings, Project } from '@glowlab/shared';
 import {
-  DEFAULT_ESTIMATE_OPTIONS, DEFAULT_PRICING, INSTALL_TYPE_LABELS, computeEstimate, getPreset, lineLengthsFeet, money,
+  DEFAULT_ESTIMATE_OPTIONS, DEFAULT_PRICING, INSTALL_TYPE_LABELS, computeEstimate, contractAmounts, getPreset, lineLengthsFeet, money,
   normalizeEstimateOptions, profileFor,
 } from '@glowlab/shared';
 import { api, cachedProjects } from '../api';
@@ -61,7 +61,7 @@ function ProjectCard({ p, settings, onOpen, onDelete }: {
           {signed && p.contract ? (
             <div className="card-total">
               <span className="muted small">signed {shortDate(p.contract.signedAt)}</span>
-              <strong>{money(p.contract.estimate.total)}</strong>
+              <strong>{money(contractAmounts(p.contract).total)}</strong>
             </div>
           ) : est && (
             <div className="card-total">

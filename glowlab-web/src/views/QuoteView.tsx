@@ -36,8 +36,8 @@ export default function QuoteView({ project, presets, settings, onPick, onEdit, 
         <button onClick={() => onEdit(project)}>← Edit design</button>
         <label className="toggle"><input type="checkbox" checked={night} onChange={(e) => setNight(e.target.checked)} /> Night mode</label>
         <button onClick={() => window.print()}>Print</button>
-        <button className="primary cta" onClick={() => { setSigning(true); window.scrollTo(0, 0); }} disabled={estimate.total <= 0}
-          title={estimate.total > 0 ? 'Customer reviews and signs the contract on this screen' : 'Price the design first'}>Sign contract →</button>
+        <button className="primary cta" onClick={() => { setSigning(true); window.scrollTo(0, 0); }}
+          title="Set the final price, then the customer reviews and signs on this screen">Create contract →</button>
       </div>
       {estimate.totalFeet === 0 && (
         <p className="error no-print">This project has no lit footage yet. Trace its lines and calibrate it in the designer to price it.</p>
@@ -52,7 +52,7 @@ export default function QuoteView({ project, presets, settings, onPick, onEdit, 
           {estimate.lines.map((l, i) => <tr key={i}><td>{l.label}<br /><span className="muted small">{l.detail}</span></td><td className="num">{money(l.amount)}</td></tr>)}
         </tbody></table>
         <p>{estimate.totalFeet} ft of lighting • {estimate.bulbCount} bulbs • {estimate.clipCount} clips</p>
-        <p className="total-row"><span>Total</span><span>{money(estimate.total)}</span></p>
+        <p className="total-row"><span>Estimated total</span><span>{money(estimate.total)}</span></p>
         <p className="total-row deposit"><span>Deposit due to book (50%)</span><span>{money(estimate.depositDue)}</span></p>
         <p className="muted small">{opts.installType === 'permanent'
           ? 'Permanent lighting is installed once and stays up year-round.'

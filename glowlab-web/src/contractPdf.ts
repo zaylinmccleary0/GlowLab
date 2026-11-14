@@ -1,5 +1,5 @@
 import type { SignedContract } from '@glowlab/shared';
-import { INSTALL_TYPE_LABELS, money } from '@glowlab/shared';
+import { INSTALL_TYPE_LABELS, contractAmounts, defaultDeposit, money } from '@glowlab/shared';
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
@@ -130,12 +130,14 @@ export async function buildContractPdf(c: SignedContract, signatureDataUrl: stri
 
   // Price
   rule(0, 8);
+  const amt = contractAmounts(c);
   for (const l of c.estimate.lines) row(l.label, money(l.amount), { detail: l.detail });
+  if (amt.adjustment !== 0) row('Price adjustment', `${amt.adjustment > 0 ? '+' : '-'}${money(Math.abs(amt.adjustment))}`, { detail: `Agreed contract price vs. the ${money(c.estimate.total)} estimate` });
   text(`${c.estimate.totalFeet} ft of lighting • ${c.estimate.bulbCount} bulbs`, { size: 9.5, color: 'muted', gap: 4 });
   rule(2, 8);
-  row('Contract total', money(c.estimate.total), { bold: true, size: 13 });
-  row('Deposit due at signing (50%)', money(c.estimate.depositDue), { bold: true, gold: true });
-  row('Balance due on completion', money(c.balanceDue));
+  row('Contract price', money(amt.total), { bold: true, size: 13 });
+  row(`Deposit due at signing${Math.abs(amt.deposit - defaultDeposit(amt.total)) < 0.005 ? ' (50%)' : ''}`, money(amt.deposit), { bold: true, gold: true });
+  row('Balance due on completion', money(amt.balance));
 
   // Terms
   rule(8, 8);
