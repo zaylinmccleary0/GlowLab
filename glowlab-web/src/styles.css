@@ -299,3 +299,5 @@ button.step { width: 36px; height: 36px; padding: 0; border-radius: 50%; font-si
 .switch input:checked + .switch-track { background: var(--gold); border-color: var(--gold); }
 .switch input:checked + .switch-track .switch-thumb { transform: translateX(18px); background: #fff; }
 .switch input:focus-visible + .switch-track { outline: 2px solid var(--gold); outline-offset: 2px; }
+.fee-row { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; margin: 6px 0 0; }
+.fee-row > span:last-child { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }

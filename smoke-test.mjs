@@ -165,13 +165,16 @@ const resign = async (body) => { await req(`/api/projects/${cq.id}/void`, { meth
 const byFeet = await resign({ feet: 60, bulbCount: 77 });
 check('edited feet re-price the lighting (60 ft x $7.50)', [byFeet.estimate.totalFeet, byFeet.contractTotal, byFeet.estimate.bulbCount], [60, 450, 77]);
 const withTakedown = await resign({ takedownIncluded: true, takedownAmount: 120 });
-check('takedown switched on with its own price', [withTakedown.contractTotal, withTakedown.estimate.lines.map((l) => l.label)], [495, [withTakedown.estimate.lines[0].label, 'Takedown / reinstall']]);
+check('takedown is a separate fee on top of the contract price (not a line)',
+  [withTakedown.contractTotal, withTakedown.takedownFee, withTakedown.depositDue, withTakedown.balanceDue, withTakedown.estimate.lines.length], [375, 120, 187.5, 307.5, 1]);
+const priceAndTakedown = await resign({ contractTotal: 400, takedownIncluded: true, takedownAmount: 120 });
+check('typed price + takedown fee', [priceAndTakedown.contractTotal, priceAndTakedown.takedownFee, priceAndTakedown.depositDue, priceAndTakedown.balanceDue], [400, 120, 200, 320]);
 const noTakedown = await resign({ takedownIncluded: false, takedownAmount: 120 });
-check('takedown switched off is left off', [noTakedown.contractTotal, noTakedown.estimate.lines.length], [375, 1]);
+check('takedown switched off is left off', [noTakedown.contractTotal, noTakedown.takedownFee, noTakedown.balanceDue], [375, 0, 187.5]);
 await req(`/api/projects/${cq.id}/void`, { method: 'POST', token, body: {} });
-let underOthers = false;
-try { await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, takedownIncluded: true, takedownAmount: 120, contractTotal: 100 } }); } catch { underOthers = true; }
-check('price below the other items rejected', underOthers, true);
+let overTotal = false;
+try { await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, takedownIncluded: true, takedownAmount: 120, depositDue: 600 } }); } catch { overTotal = true; }
+check('deposit over the total rejected', overTotal, true);
 await req(`/api/projects/${cq.id}`, { method: 'DELETE', token });
 await req('/api/settings/contract-terms', { method: 'PUT', token, body: { terms: null } });
 

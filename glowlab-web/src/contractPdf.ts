@@ -134,8 +134,12 @@ export async function buildContractPdf(c: SignedContract, signatureDataUrl: stri
   for (const l of c.estimate.lines) row(l.label, money(l.amount), { detail: l.detail });
   text(`${c.estimate.totalFeet} ft of lighting • ${c.estimate.bulbCount} bulbs`, { size: 9.5, color: 'muted', gap: 4 });
   rule(2, 8);
-  row('Contract price', money(amt.total), { bold: true, size: 13 });
-  row(`Deposit due at signing${Math.abs(amt.deposit - defaultDeposit(amt.total)) < 0.005 ? ' (50%)' : ''}`, money(amt.deposit), { bold: true, gold: true });
+  row('Contract price', money(amt.price), { bold: true, size: 13 });
+  if (amt.takedown > 0) {
+    row('Takedown / reinstall fee (added to the contract price)', `+ ${money(amt.takedown)}`);
+    row('Total', money(amt.total), { bold: true, size: 13 });
+  }
+  row(`Deposit due at signing${Math.abs(amt.deposit - defaultDeposit(amt.price)) < 0.005 ? ' (50% of the contract price)' : ''}`, money(amt.deposit), { bold: true, gold: true });
   row('Balance due on completion', money(amt.balance));
 
   // Terms
