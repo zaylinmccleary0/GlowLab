@@ -1,5 +1,5 @@
 import type { SignedContract } from '@glowlab/shared';
-import { INSTALL_TYPE_LABELS, contractAmounts, defaultDeposit, money } from '@glowlab/shared';
+import { INSTALL_TYPE_LABELS, contractAmounts, defaultDeposit, money, takedownLaterNote } from '@glowlab/shared';
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
@@ -134,13 +134,13 @@ export async function buildContractPdf(c: SignedContract, signatureDataUrl: stri
   for (const l of c.estimate.lines) row(l.label, money(l.amount), { detail: l.detail });
   text(`${c.estimate.totalFeet} ft of lighting • ${c.estimate.bulbCount} bulbs`, { size: 9.5, color: 'muted', gap: 4 });
   rule(2, 8);
-  row('Contract price', money(amt.price), { bold: true, size: 13 });
-  if (amt.takedown > 0) {
-    row('Takedown / reinstall fee (added to the contract price)', `+ ${money(amt.takedown)}`);
-    row('Total', money(amt.total), { bold: true, size: 13 });
-  }
-  row(`Deposit due at signing${Math.abs(amt.deposit - defaultDeposit(amt.price)) < 0.005 ? ' (50% of the contract price)' : ''}`, money(amt.deposit), { bold: true, gold: true });
+  row(`Contract price${amt.takedown > 0 ? ' (this season)' : ''}`, money(amt.price), { bold: true, size: 13 });
+  row(`Deposit due at signing${Math.abs(amt.deposit - defaultDeposit(amt.price)) < 0.005 ? ' (50%)' : ''}`, money(amt.deposit), { bold: true, gold: true });
   row('Balance due on completion', money(amt.balance));
+  if (amt.takedown > 0) {
+    y += 6;
+    row('Takedown / reinstall fee (collected later)', money(amt.takedown), { detail: takedownLaterNote(amt.takedown) });
+  }
 
   // Terms
   rule(8, 8);

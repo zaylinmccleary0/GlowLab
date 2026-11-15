@@ -121,10 +121,9 @@ router.post('/:id/sign', async (req: Request, res: Response) => {
   if (!(contractTotal > 0)) {
     res.status(400).json({ error: 'Set a contract price first (this design has no estimate yet).' }); return;
   }
-  // Takedown / reinstall is a separate fee on top of the contract price; the deposit defaults to 50% of the price.
-  const totalDue = round2(contractTotal + takedownFee);
+  // The contract price covers this season; the takedown / reinstall fee is recorded but collected later.
   const depositDue = input.depositDue ?? defaultDeposit(contractTotal);
-  if (depositDue > totalDue) { res.status(400).json({ error: "The deposit can't be more than the total" }); return; }
+  if (depositDue > contractTotal) { res.status(400).json({ error: "The deposit can't be more than the contract price" }); return; }
   const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
   const businessName = req.currentUser.name;
   const contract: SignedContract = {
@@ -132,7 +131,7 @@ router.post('/:id/sign', async (req: Request, res: Response) => {
     customerName: input.customerName, customerPhone: input.customerPhone, customerEmail: input.customerEmail,
     businessName, clientName: project.clientName, address: project.address,
     presetName: preset.name, installType: options.installType, bulbSpacingInches: profileFor(settings, options).bulbSpacingInches,
-    estimate, contractTotal, takedownFee, depositDue, balanceDue: round2(totalDue - depositDue),
+    estimate, contractTotal, takedownFee, depositDue, balanceDue: round2(contractTotal - depositDue),
     terms: contractTermsFor(await getContractTerms(req.currentUser.id), businessName),
     signerIp: forwarded || req.socket.remoteAddress || '',
     signerUserAgent: String(req.headers['user-agent'] ?? '').slice(0, 300),

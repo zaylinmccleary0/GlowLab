@@ -83,7 +83,7 @@ export interface SignedContract {
   contractTotal?: number;
   /** Deposit due at signing. Missing on older contracts: use contractAmounts(). */
   depositDue?: number;
-  /** Takedown / reinstall fee added on top of the contract price (0 or missing = none). */
+  /** Takedown / reinstall fee, collected separately later (next season) — not part of the amounts due (0 or missing = none). */
   takedownFee?: number;
   /** Balance due on completion (total minus deposit). */
   balanceDue: number;

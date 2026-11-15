@@ -33,13 +33,20 @@ export const MAX_CONTRACT_TOTAL = 1_000_000;
 
 const cents = (n: number) => Math.round(n * 100) / 100;
 
-/** What the customer owes under a signed contract: total, deposit at signing, and balance on completion. */
+/**
+ * What the customer owes under a signed contract: the price (first season), the deposit at signing and
+ * the balance on completion. The takedown / reinstall fee is listed separately: it's collected later.
+ */
 export function contractAmounts(c: SignedContract): { price: number; takedown: number; total: number; deposit: number; balance: number } {
   const price = typeof c.contractTotal === 'number' ? c.contractTotal : c.estimate.total;
   const takedown = typeof c.takedownFee === 'number' ? c.takedownFee : 0;
-  const total = cents(price + takedown);
   const deposit = typeof c.depositDue === 'number' ? c.depositDue : c.estimate.depositDue;
-  return { price, takedown, total, deposit, balance: cents(total - deposit) };
+  return { price, takedown, total: price, deposit, balance: cents(price - deposit) };
+}
+
+/** The line that explains the later takedown / reinstall fee on the contract. */
+export function takedownLaterNote(fee: number): string {
+  return `A takedown / reinstall fee of ${money(fee)} applies after this season. It is not part of the contract price or the amounts due above, and is billed separately when the lights are taken down and reinstalled (about a year from now).`;
 }
 
 /** The default deposit for a contract price: 50%. */

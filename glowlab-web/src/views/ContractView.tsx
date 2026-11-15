@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EstimateBreakdown, Preset, PricingSettings, Project } from '@glowlab/shared';
 import {
-  INSTALL_TYPE_LABELS, MAX_CONTRACT_TOTAL, computeEstimate, contractAmounts, contractBreakdown, contractTermsFor, defaultDeposit,
+  INSTALL_TYPE_LABELS, MAX_CONTRACT_TOTAL, computeEstimate, contractAmounts, contractBreakdown, contractTermsFor, defaultDeposit, takedownLaterNote,
   lightingRatePerFoot, money, normalizeEstimateOptions, profileFor, rateCardFor, round2,
 } from '@glowlab/shared';
 import type { ContractEdits } from '@glowlab/shared';
@@ -18,8 +18,8 @@ const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { h
 const parseNum = (s: string): number | undefined => { const t = s.replace(/[$,\s]|ft/gi, ''); return t === '' ? undefined : Number(t); };
 const bad = (n: number | undefined) => n !== undefined && (!Number.isFinite(n) || n < 0);
 
-function PriceTable({ estimate, price, takedown, total, deposit, balance }: {
-  estimate: EstimateBreakdown; price: number; takedown: number; total: number; deposit: number; balance: number;
+function PriceTable({ estimate, price, takedown, deposit, balance }: {
+  estimate: EstimateBreakdown; price: number; takedown: number; deposit: number; balance: number;
 }) {
   const halfDeposit = Math.abs(deposit - defaultDeposit(price)) < 0.005;
   return (
@@ -28,15 +28,15 @@ function PriceTable({ estimate, price, takedown, total, deposit, balance }: {
         {estimate.lines.map((l, i) => <tr key={i}><td>{l.label}<br /><span className="muted small">{l.detail}</span></td><td className="num">{money(l.amount)}</td></tr>)}
       </tbody></table>
       <p>{estimate.totalFeet} ft of lighting • {estimate.bulbCount} bulbs</p>
-      <p className="total-row"><span>Contract price</span><span>{money(price)}</span></p>
-      {takedown > 0 && (
-        <>
-          <p className="fee-row"><span>Takedown / reinstall fee <span className="muted small">(added to the contract price)</span></span><span>+ {money(takedown)}</span></p>
-          <p className="total-row"><span>Total</span><span>{money(total)}</span></p>
-        </>
-      )}
-      <p className="total-row deposit"><span>Deposit due at signing{halfDeposit ? ' (50% of the contract price)' : ''}</span><span>{money(deposit)}</span></p>
+      <p className="total-row"><span>Contract price{takedown > 0 ? ' (this season)' : ''}</span><span>{money(price)}</span></p>
+      <p className="total-row deposit"><span>Deposit due at signing{halfDeposit ? ' (50%)' : ''}</span><span>{money(deposit)}</span></p>
       <p className="total-row"><span>Balance due on completion</span><span>{money(balance)}</span></p>
+      {takedown > 0 && (
+        <div className="later-fee">
+          <p className="fee-row"><span>Takedown / reinstall fee <span className="muted small">— collected later</span></span><span>{money(takedown)}</span></p>
+          <p className="small">{takedownLaterNote(takedown)}</p>
+        </div>
+      )}
     </>
   );
 }
@@ -149,16 +149,15 @@ export default function ContractView({ project, presets, settings, onSigned, onB
   const draft = fieldProblem ? null : contractBreakdown(liveEstimate, lightingRatePerFoot(settings, opts), edits);
   const draftPrice = draft?.breakdown.total ?? 0;
   const draftTakedown = draft?.takedownFee ?? 0;
-  const draftTotal = round2(draftPrice + draftTakedown);
   const draftDeposit = depositTyped ?? defaultDeposit(draftPrice);
   const priceProblem = fieldProblem ?? draft?.error
     ?? (draftPrice <= 0 ? 'This design has no estimate yet. Type the feet of lighting or the contract price you agreed on.'
-      : draftTotal > MAX_CONTRACT_TOTAL ? 'That price looks too high — check it for typos.'
-      : draftDeposit > draftTotal ? "The deposit can't be more than the total." : null);
+      : draftPrice > MAX_CONTRACT_TOTAL ? 'That price looks too high — check it for typos.'
+      : draftDeposit > draftPrice ? "The deposit can't be more than the contract price." : null);
   const estimate = signed?.estimate ?? (draft && !draft.error ? draft.breakdown : liveEstimate);
   const amounts = signed ? contractAmounts(signed) : priceProblem
     ? { price: 0, takedown: 0, total: 0, deposit: 0, balance: 0 }
-    : { price: draftPrice, takedown: draftTakedown, total: draftTotal, deposit: round2(draftDeposit), balance: round2(draftTotal - draftDeposit) };
+    : { price: draftPrice, takedown: draftTakedown, total: draftPrice, deposit: round2(draftDeposit), balance: round2(draftPrice - draftDeposit) };
   const anyEdits = Boolean(feetText || bulbsText || takedownText || priceText || depositText || takedownOn !== null);
   const resetEdits = () => { setFeetText(''); setBulbsText(''); setTakedownOn(null); setTakedownText(''); setPriceText(''); setDepositText(''); setAgreed(false); };
   const businessName = signed?.businessName ?? user?.name ?? '';
@@ -241,8 +240,8 @@ export default function ContractView({ project, presets, settings, onSigned, onB
           </div>
           {priceProblem ? <p className="error small">{priceProblem}</p> : (
             <p className="small price-summary">
-              Customer signs for <strong>{money(amounts.total)}</strong>
-              {amounts.takedown > 0 && <> ({money(amounts.price)} + {money(amounts.takedown)} takedown / reinstall)</>}: {money(amounts.deposit)} now, {money(amounts.balance)} on completion.
+              Customer signs for <strong>{money(amounts.price)}</strong>: {money(amounts.deposit)} now, {money(amounts.balance)} on completion.
+              {amounts.takedown > 0 && <> Takedown / reinstall {money(amounts.takedown)} is listed as collected later.</>}
               {anyEdits && <> <button type="button" className="link" onClick={resetEdits}>Reset to the design</button></>}
             </p>
           )}
@@ -260,7 +259,7 @@ export default function ContractView({ project, presets, settings, onSigned, onB
         </p>
         <HouseStage project={project} preset={preset} spacingInches={signed?.bulbSpacingInches ?? profile.bulbSpacingInches}
           installType={signed?.installType ?? opts.installType} night />
-        <PriceTable estimate={estimate} price={amounts.price} takedown={amounts.takedown} total={amounts.total} deposit={amounts.deposit} balance={amounts.balance} />
+        <PriceTable estimate={estimate} price={amounts.price} takedown={amounts.takedown} deposit={amounts.deposit} balance={amounts.balance} />
 
         <h3 className="contract-subtitle">Terms</h3>
         {signed || terms ? <div className="contract-terms">{signed?.terms ?? terms}</div> : <p className="muted">Loading terms…</p>}
@@ -292,7 +291,7 @@ export default function ContractView({ project, presets, settings, onSigned, onB
             <SignaturePad onChange={setSignature} disabled={busy} />
             <label className="agree">
               <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-              <span>I have read and agree to this agreement, including the {money(amounts.price)} contract price{amounts.takedown > 0 ? ` plus the ${money(amounts.takedown)} takedown / reinstall fee` : ''} and the {money(amounts.deposit)} deposit, and I agree to sign it electronically.</span>
+              <span>I have read and agree to this agreement, including the {money(amounts.price)} contract price and the {money(amounts.deposit)} deposit{amounts.takedown > 0 ? `, and the ${money(amounts.takedown)} takedown / reinstall fee to be collected later` : ''}, and I agree to sign it electronically.</span>
             </label>
             <button className="primary big" onClick={() => { void sign(); }} disabled={!canSign}>{busy ? 'Signing…' : 'Sign contract'}</button>
             {!canSign && !busy && (
