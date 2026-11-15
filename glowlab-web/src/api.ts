@@ -1,4 +1,4 @@
-import type { EstimateBreakdown, EstimateOptions, Preset, PricingSettings, Project, PublicUser, SignContractInput } from '@glowlab/shared';
+import type { EstimateBreakdown, EstimateOptions, Preset, PricingSettings, Project, PublicUser, SignContractInput, UploadSignedInput } from '@glowlab/shared';
 
 const TOKEN_KEY = 'glowlab.token';
 let projectsCache: Project[] | null = null;
@@ -45,6 +45,13 @@ export const api = {
   signContract: (id: string, input: SignContractInput) =>
     request<{ project: Project }>(`/api/projects/${id}/sign`, { method: 'POST', body: JSON.stringify(input) }),
   voidContract: (id: string) => request<{ project: Project }>(`/api/projects/${id}/void`, { method: 'POST', body: '{}' }),
+  /** Saves the contract (price locked) to be signed later: by email, on paper, or in the app another time. */
+  prepareContract: (id: string, input: Omit<SignContractInput, 'signatureDataUrl' | 'agreed'>) =>
+    request<{ project: Project }>(`/api/projects/${id}/contract`, { method: 'POST', body: JSON.stringify(input) }),
+  /** A saved contract was signed outside the app: upload the signed copy and make it a project. */
+  uploadSigned: (id: string, input: UploadSignedInput) =>
+    request<{ project: Project }>(`/api/projects/${id}/upload-signed`, { method: 'POST', body: JSON.stringify(input) }),
+  getSignedCopy: (id: string) => request<{ dataUrl: string; name: string; type: string }>(`/api/projects/${id}/signed-copy`),
   getContractTerms: () => request<{ terms: string | null; defaultTerms: string }>('/api/settings/contract-terms'),
   saveContractTerms: (terms: string | null) =>
     request<{ terms: string | null; defaultTerms: string }>('/api/settings/contract-terms', { method: 'PUT', body: JSON.stringify({ terms }) }),

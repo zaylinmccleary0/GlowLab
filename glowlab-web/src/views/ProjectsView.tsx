@@ -45,6 +45,7 @@ function ProjectCard({ p, settings, onOpen, onDelete }: {
       <span className="muted small">{p.address || 'No address'}</span>
       <div className="chips wrap">
         {signed && <span className="badge won">Signed ✓</span>}
+        {p.status === 'contract' && <span className="badge pending">Awaiting signature</span>}
         <span className="badge">{preset?.name ?? p.presetId}</span>
         <span className="badge alt">{INSTALL_TYPE_LABELS[opts.installType]}</span>
         {settings.profiles.length > 1 && <span className="badge alt">{profile.name}</span>}

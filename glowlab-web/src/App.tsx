@@ -124,12 +124,13 @@ function Shell() {
             settings ? (
               <QuoteView project={quoteProject} presets={presets} settings={settings} onPick={(p) => { setQuoteProject(p); top(); }}
                 onEdit={(p) => { setOpen(p); setTab('projects'); top(); }}
-                onSigned={(p) => { setQuoteProject(null); showDeal(p); }} />
+                onSigned={(p) => { setQuoteProject(null); showDeal(p); }} onClose={() => { setQuoteProject(null); top(); }} />
             ) : <div className="spinner" aria-label="Loading" />
           ) : tab === 'deals' ? (
             dealProject && settings ? (
               <ContractView key={dealProject.id} project={dealProject} presets={presets} settings={settings}
-                onBack={() => { setDealProject(null); top(); }}
+                onBack={() => { setDealProject(null); top(); }} backLabel={dealProject.status === 'won' ? '← All projects' : '← Back'}
+                onSigned={(p) => { setDealProject(p); top(); }} onSaved={(p) => { setDealProject(p); top(); }}
                 onVoided={(p) => { setDealProject(null); setQuoteProject(p); go('quotes'); }} />
             ) : <DealsView onOpen={(p) => { setDealProject(p); top(); }} />
           ) : tab === 'projects' ? (

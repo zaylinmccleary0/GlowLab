@@ -1,4 +1,4 @@
-import type { EstimateBreakdown, EstimateLine, SignContractInput, SignedContract } from './types';
+import type { EstimateBreakdown, EstimateLine, SignContractInput, SignedContract, UploadSignedInput } from './types';
 import { money } from './pricing';
 
 /**
@@ -43,6 +43,33 @@ export function contractAmounts(c: SignedContract): { price: number; takedown: n
   const deposit = typeof c.depositDue === 'number' ? c.depositDue : c.estimate.depositDue;
   return { price, takedown, total: price, deposit, balance: cents(price - deposit) };
 }
+
+/** Largest uploaded signed copy, as a data: URL (keeps the request under the 4 MB server limit). */
+export const MAX_SIGNED_COPY_LENGTH = 3_800_000;
+const SIGNED_COPY_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+
+/** Checks an uploaded signed copy. */
+export function validateUploadSigned(raw: unknown, today = new Date()): { input?: UploadSignedInput; error?: string } {
+  const b = (raw ?? {}) as Record<string, unknown>;
+  const file = typeof b.fileDataUrl === 'string' ? b.fileDataUrl : '';
+  const type = /^data:([^;,]+);base64,/.exec(file)?.[1] ?? '';
+  if (!file) return { error: 'Choose the signed contract (a photo or PDF) to upload' };
+  if (!SIGNED_COPY_TYPES.includes(type)) return { error: 'Upload a photo (JPEG, PNG) or a PDF of the signed contract' };
+  if (file.length > MAX_SIGNED_COPY_LENGTH) return { error: 'That file is too large (over about 2.8 MB). Try a photo, or a smaller PDF.' };
+  const fileName = (typeof b.fileName === 'string' ? b.fileName.trim() : '').replace(/[\\/:*?"<>|]+/g, '').slice(0, 120) || 'Signed contract';
+  const input: UploadSignedInput = { fileDataUrl: file, fileName };
+  if (typeof b.signedDate === 'string' && b.signedDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(b.signedDate) || Number.isNaN(Date.parse(b.signedDate))) return { error: "The signed date doesn't look right" };
+    const tomorrow = new Date(today.getTime() + 36 * 3600 * 1000).toISOString().slice(0, 10);
+    if (b.signedDate > tomorrow) return { error: "The signed date can't be in the future" };
+    input.signedDate = b.signedDate;
+  }
+  if (typeof b.customerName === 'string' && b.customerName.trim()) input.customerName = b.customerName.trim().slice(0, 120);
+  return { input };
+}
+
+/** How a contract was signed (older contracts, from before uploads, were all signed in the app). */
+export function signMethodOf(c: SignedContract): 'app' | 'upload' { return c.signMethod ?? 'app'; }
 
 /** The line that explains the later takedown / reinstall fee on the contract. */
 export function takedownLaterNote(fee: number): string {
@@ -123,19 +150,24 @@ export function contractTermsFor(terms: string | null | undefined, businessName:
 }
 
 /** Checks what the customer filled in. Returns the cleaned input or the first problem. */
-export function validateSignInput(raw: unknown): { input?: SignContractInput; error?: string } {
+export function validateSignInput(raw: unknown, opts: { requireSignature?: boolean } = {}): { input?: SignContractInput; error?: string } {
+  const requireSignature = opts.requireSignature ?? true;
   const b = (raw ?? {}) as Record<string, unknown>;
   const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
   const customerName = str(b.customerName, 120);
-  if (!customerName) return { error: "The customer's name is required" };
+  if (!customerName && requireSignature) return { error: "The customer's name is required" };
   const customerPhone = str(b.customerPhone, 40);
   const customerEmail = str(b.customerEmail, 200);
   if (customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) return { error: "That email address doesn't look right" };
-  const signatureDataUrl = b.signatureDataUrl;
-  if (typeof signatureDataUrl !== 'string' || !signatureDataUrl.startsWith('data:image/png;base64,')) return { error: 'A signature is required' };
-  if (signatureDataUrl.length > MAX_SIGNATURE_LENGTH) return { error: 'The signature image is too large' };
-  if (b.agreed !== true) return { error: 'The customer must agree to the terms' };
-  const input: SignContractInput = { customerName, customerPhone, customerEmail, signatureDataUrl, agreed: true };
+  let signatureDataUrl = '';
+  if (requireSignature) {
+    const sig = b.signatureDataUrl;
+    if (typeof sig !== 'string' || !sig.startsWith('data:image/png;base64,')) return { error: 'A signature is required' };
+    if (sig.length > MAX_SIGNATURE_LENGTH) return { error: 'The signature image is too large' };
+    if (b.agreed !== true) return { error: 'The customer must agree to the terms' };
+    signatureDataUrl = sig;
+  }
+  const input: SignContractInput = { customerName, customerPhone, customerEmail, signatureDataUrl, agreed: requireSignature };
   if (b.contractTotal !== undefined && b.contractTotal !== null) {
     const total = Number(b.contractTotal);
     if (!Number.isFinite(total) || total <= 0) return { error: 'The contract price must be more than $0' };

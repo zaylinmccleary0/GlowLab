@@ -16,6 +16,7 @@ interface DbProject {
   calibration_json: string | null; lines_json: string; preset_id: string;
   estimate_options_json: string; created_at: string; updated_at: string;
   status?: string | null; contract_json?: string | null; signature_data_url?: string | null;
+  signed_copy?: string | null; has_signed_copy?: number | null;
 }
 
 const SCHEMA = [
@@ -63,6 +64,10 @@ async function migrate(db: Client): Promise<void> {
   }
   if (!pcols.rows.some((r) => r.name === 'signature_data_url')) {
     await db.execute('ALTER TABLE projects ADD COLUMN signature_data_url TEXT');
+  }
+  // A photo/PDF of a contract signed on paper or by email (data: URL).
+  if (!pcols.rows.some((r) => r.name === 'signed_copy')) {
+    await db.execute('ALTER TABLE projects ADD COLUMN signed_copy TEXT');
   }
   if (!cols.rows.some((r) => r.name === 'contract_terms')) {
     await db.execute('ALTER TABLE settings ADD COLUMN contract_terms TEXT');
@@ -179,9 +184,10 @@ function toProject(row: DbProject): Project {
     presetId: row.preset_id,
     estimateOptions: normalizeEstimateOptions(JSON.parse(row.estimate_options_json) as EstimateOptions),
     createdAt: row.created_at, updatedAt: row.updated_at,
-    status: (row.status === 'won' ? 'won' : 'quote') as ProjectStatus,
+    status: (row.status === 'won' || row.status === 'contract' ? row.status : 'quote') as ProjectStatus,
     contract: row.contract_json ? (JSON.parse(row.contract_json) as SignedContract) : null,
     signatureDataUrl: row.signature_data_url ?? null,
+    hasSignedCopy: Number(row.has_signed_copy ?? 0) === 1,
   };
 }
 /**
@@ -192,12 +198,14 @@ function toProject(row: DbProject): Project {
 export async function listProjects(userId: string): Promise<Project[]> {
   const rows = await all<DbProject>(
     `SELECT id, user_id, client_name, address, NULL AS photo_data_url, thumb_data_url, (photo_data_url IS NOT NULL) AS has_photo, image_width, image_height, calibration_json,
-      lines_json, preset_id, estimate_options_json, created_at, updated_at, status, contract_json, NULL AS signature_data_url
+      lines_json, preset_id, estimate_options_json, created_at, updated_at, status, contract_json, NULL AS signature_data_url, (signed_copy IS NOT NULL) AS has_signed_copy
      FROM projects WHERE user_id = ? ORDER BY updated_at DESC`, [userId]);
   return rows.map(toProject);
 }
 export async function getProject(userId: string, id: string): Promise<Project | undefined> {
-  const row = await one<DbProject>('SELECT * FROM projects WHERE id = ? AND user_id = ?', [id, userId]);
+  const row = await one<DbProject>(`SELECT id, user_id, client_name, address, photo_data_url, thumb_data_url, image_width, image_height, calibration_json,
+      lines_json, preset_id, estimate_options_json, created_at, updated_at, status, contract_json, signature_data_url, (signed_copy IS NOT NULL) AS has_signed_copy
+     FROM projects WHERE id = ? AND user_id = ?`, [id, userId]);
   return row ? toProject(row) : undefined;
 }
 export interface ProjectInput {
@@ -237,10 +245,24 @@ export async function signProject(userId: string, id: string, contract: SignedCo
   return (await run(`UPDATE projects SET status='won', contract_json=?, signature_data_url=?, updated_at=?
     WHERE id=? AND user_id=? AND status != 'won'`, [JSON.stringify(contract), signatureDataUrl, nowIso(), id, userId])) > 0;
 }
-/** Voids a signed contract: the project goes back to being an editable quote. */
+/** Saves a contract to be signed later (replaces an earlier saved one). Never touches a signed one. */
+export async function prepareContract(userId: string, id: string, contract: SignedContract): Promise<boolean> {
+  return (await run(`UPDATE projects SET status='contract', contract_json=?, signature_data_url=NULL, signed_copy=NULL, updated_at=?
+    WHERE id=? AND user_id=? AND status != 'won'`, [JSON.stringify(contract), nowIso(), id, userId])) > 0;
+}
+/** Marks a saved contract as signed outside the app, keeping the uploaded signed copy. */
+export async function signWithCopy(userId: string, id: string, contract: SignedContract, signedCopy: string): Promise<boolean> {
+  return (await run(`UPDATE projects SET status='won', contract_json=?, signature_data_url=NULL, signed_copy=?, updated_at=?
+    WHERE id=? AND user_id=? AND status = 'contract'`, [JSON.stringify(contract), signedCopy, nowIso(), id, userId])) > 0;
+}
+export async function getSignedCopy(userId: string, id: string): Promise<string | null> {
+  const row = await one<{ signed_copy: string | null }>('SELECT signed_copy FROM projects WHERE id = ? AND user_id = ?', [id, userId]);
+  return row?.signed_copy ?? null;
+}
+/** Voids a signed contract or cancels a saved one: the project goes back to being an editable quote. */
 export async function voidContract(userId: string, id: string): Promise<boolean> {
-  return (await run(`UPDATE projects SET status='quote', contract_json=NULL, signature_data_url=NULL, updated_at=?
-    WHERE id=? AND user_id=? AND status = 'won'`, [nowIso(), id, userId])) > 0;
+  return (await run(`UPDATE projects SET status='quote', contract_json=NULL, signature_data_url=NULL, signed_copy=NULL, updated_at=?
+    WHERE id=? AND user_id=? AND status IN ('won', 'contract')`, [nowIso(), id, userId])) > 0;
 }
 
 // ----- contract terms -----

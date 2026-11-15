@@ -7,16 +7,20 @@ import { shortDate } from '../format';
 const dealsFrom = (projects: Project[]) => projects
   .filter((p) => p.status === 'won' && p.contract)
   .sort((a, b) => (b.contract!.signedAt).localeCompare(a.contract!.signedAt));
+const awaitingFrom = (projects: Project[]) => projects
+  .filter((p) => p.status === 'contract' && p.contract)
+  .sort((a, b) => (b.contract!.preparedAt ?? b.updatedAt).localeCompare(a.contract!.preparedAt ?? a.updatedAt));
 
 /** The Projects tab: closed deals (signed contracts), newest first, with totals. */
 export default function DealsView({ onOpen }: { onOpen: (p: Project) => void }) {
   const [deals, setDeals] = useState<Project[] | null>(() => { const c = cachedProjects(); return c ? dealsFrom(c) : null; });
+  const [awaiting, setAwaiting] = useState<Project[]>(() => awaitingFrom(cachedProjects() ?? []));
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
 
   useEffect(() => {
     api.listProjects()
-      .then(({ projects }) => setDeals(dealsFrom(projects)))
+      .then(({ projects }) => { setDeals(dealsFrom(projects)); setAwaiting(awaitingFrom(projects)); })
       .catch((e: Error) => setError(e.message));
   }, []);
 
@@ -46,6 +50,31 @@ export default function DealsView({ onOpen }: { onOpen: (p: Project) => void }) 
       )}
       {deals?.length === 0 && (
         <p className="muted">No signed contracts yet. Open a quote on the Quotes tab and tap <strong>Sign contract</strong> to close your first deal.</p>
+      )}
+      {awaiting.length > 0 && (
+        <>
+          <h3 className="list-heading">Awaiting signature</h3>
+          <ul className="deal-list">
+            {awaiting.map((p) => {
+              const c = p.contract!;
+              return (
+                <li key={p.id} className="deal tappable awaiting" onClick={() => { if (opening === null) void open(p.id); }}>
+                  <div className="deal-main">
+                    <strong>{p.clientName}</strong>
+                    <span className="muted small">{p.address || 'No address'}</span>
+                    <span className="small"><span className="badge pending">Out for signature</span> saved {shortDate(c.preparedAt ?? p.updatedAt)}</span>
+                  </div>
+                  <div className="deal-money">
+                    <strong>{money(contractAmounts(c).total)}</strong>
+                    <span className="muted small">deposit {money(contractAmounts(c).deposit)}</span>
+                  </div>
+                  <button onClick={(e) => { e.stopPropagation(); void open(p.id); }} disabled={opening !== null}>{opening === p.id ? 'Opening…' : 'Open'}</button>
+                </li>
+              );
+            })}
+          </ul>
+          {(deals?.length ?? 0) > 0 && <h3 className="list-heading">Signed</h3>}
+        </>
       )}
       <ul className="deal-list">
         {deals?.map((p) => {

@@ -65,14 +65,26 @@ export interface Project {
   contract?: SignedContract | null;
   /** The customer's drawn signature (PNG data URL). Only on single-project results, never in the list. */
   signatureDataUrl?: string | null;
+  /** Whether a signed copy (photo/PDF of the paper contract) was uploaded. Fetch it with GET /api/projects/:id/signed-copy. */
+  hasSignedCopy?: boolean;
 }
-export type ProjectStatus = 'quote' | 'won';
+/** quote = still a design/quote; contract = contract saved and sent, waiting for a signature; won = signed (a project). */
+export type ProjectStatus = 'quote' | 'contract' | 'won';
+/** How a contract was signed: on the screen in the app, or on paper/email with the signed copy uploaded. */
+export type SignMethod = 'app' | 'upload';
 /**
  * Everything the customer agreed to, frozen at the moment of signing, so later price-list
  * or terms changes never alter a signed contract.
  */
 export interface SignedContract {
+  /** When it was signed ('' while a saved contract is waiting for a signature). */
   signedAt: string;
+  /** When the contract was saved to be signed later (missing if it was signed straight away). */
+  preparedAt?: string;
+  /** Missing on contracts from before uploads existed: those were signed in the app. */
+  signMethod?: SignMethod;
+  /** The uploaded signed copy's file name and type (signMethod 'upload'). */
+  signedCopyName?: string; signedCopyType?: string;
   customerName: string; customerPhone: string; customerEmail: string;
   businessName: string;
   clientName: string; address: string;
@@ -90,6 +102,15 @@ export interface SignedContract {
   terms: string;
   /** Audit trail for the electronic signature. */
   signerIp: string; signerUserAgent: string;
+}
+/** A signed copy uploaded for a contract that was signed outside the app. */
+export interface UploadSignedInput {
+  /** data: URL of the photo (JPEG/PNG/WebP) or PDF. */
+  fileDataUrl: string; fileName: string;
+  /** The date it was signed, YYYY-MM-DD (defaults to today). */
+  signedDate?: string;
+  /** Who signed it, if different from the name on the contract. */
+  customerName?: string;
 }
 /** What the customer fills in on the signing screen. */
 export interface SignContractInput {

@@ -304,3 +304,16 @@ button.step { width: 36px; height: 36px; padding: 0; border-radius: 50%; font-si
 .later-fee { margin-top: 14px; padding: 10px 12px; border: 1px dashed #c9d2cc; border-radius: 10px; background: #f6f8f6; }
 .later-fee p { margin: 0; }
 .later-fee .small { margin-top: 4px; color: #3d4741; line-height: 1.45; }
+
+/* Saved contracts waiting for a signature */
+.badge.pending { background: #3d3315; color: #f3d77a; text-transform: none; }
+.pending-banner { background: #2c2716; border: 1px solid #6b5a22; color: #f3e2a8; padding: 10px 14px; border-radius: 10px; font-weight: 600; line-height: 1.4; }
+.paper-lines { margin: 8px 0 22px; }
+.sign-now-title { margin: 18px 0 6px; font-size: 15px; }
+.list-heading { margin: 18px 0 8px; font-size: 15px; color: var(--muted, #9fb3a6); }
+.deal.awaiting { border-color: #6b5a22; }
+.upload-card { margin: 18px 0; padding: 16px; border: 1px dashed #6b5a22; border-radius: 14px; background: rgba(243, 215, 122, 0.05); display: flex; flex-direction: column; gap: 10px; }
+.upload-card h3 { margin: 0; }
+.file-pick { position: relative; display: flex; align-items: center; justify-content: center; min-height: 52px; border: 1.5px dashed #7d8f84; border-radius: 12px; cursor: pointer; font-weight: 600; padding: 8px 12px; text-align: center; word-break: break-word; }
+.file-pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.signed-copy-img { display: block; max-width: 100%; max-height: 520px; object-fit: contain; border-radius: 8px; border: 1px solid #ccd5cf; margin-top: 10px; background: #fff; }

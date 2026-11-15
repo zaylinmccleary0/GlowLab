@@ -1,13 +1,16 @@
 import type { SignedContract } from '@glowlab/shared';
-import { INSTALL_TYPE_LABELS, contractAmounts, defaultDeposit, money, takedownLaterNote } from '@glowlab/shared';
+import { INSTALL_TYPE_LABELS, contractAmounts, defaultDeposit, money, signMethodOf, takedownLaterNote } from '@glowlab/shared';
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+/** The contract's date: when it was signed, else when it was saved, else today. */
+const contractDate = (c: SignedContract) => c.signedAt || c.preparedAt || new Date().toISOString();
 
 /** A file name like "Contract - The Johnsons - 2026-11-14.pdf". */
 export function contractFileName(c: SignedContract): string {
   const who = (c.clientName || c.customerName || 'Customer').replace(/[\\/:*?"<>|]+/g, '').trim();
-  return `Contract - ${who} - ${c.signedAt.slice(0, 10)}.pdf`;
+  const d = new Date(contractDate(c)); // local date, so an evening save isn't named for tomorrow
+  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return `Contract - ${who} - ${day}${c.signedAt ? '' : ' (to sign)'}.pdf`;
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -116,7 +119,7 @@ export async function buildContractPdf(c: SignedContract, signatureDataUrl: stri
   doc.text(c.businessName || 'GlowLab', M + (logo ? 44 : 0), y + 23);
   y += 46;
   text('Holiday Lighting Installation Agreement', { size: 14, bold: true, gap: 6 });
-  text(`Date: ${fmtDate(c.signedAt)}`);
+  text(`Date: ${fmtDate(contractDate(c))}`);
   text(`Customer: ${c.clientName}${c.address ? ` — ${c.address}` : ''}`);
   text(`Design: ${c.presetName} — ${INSTALL_TYPE_LABELS[c.installType]} lighting (${c.installType === 'permanent' ? 'permanent LED' : 'C9'}, ${c.bulbSpacingInches}" spacing)`, { gap: 10 });
 
@@ -150,23 +153,43 @@ export async function buildContractPdf(c: SignedContract, signatureDataUrl: stri
   // Signatures
   rule(6, 8);
   text('Signatures', { size: 13, bold: true, gap: 6 });
-  room(120);
-  if (signatureDataUrl) {
-    try {
-      const sig = await loadImage(signatureDataUrl);
-      const sw = Math.min(260, CW); const sh = Math.min(90, (sw * sig.naturalHeight) / Math.max(1, sig.naturalWidth));
-      doc.addImage(signatureDataUrl, 'PNG', M, y, (sh * sig.naturalWidth) / Math.max(1, sig.naturalHeight), sh);
-      y += sh + 2;
-    } catch { /* signature image unreadable: the signed-by line below still records it */ }
+  const signLine = (label: string, x: number, width: number) => {
+    doc.setDrawColor(28, 36, 32); doc.line(x, y, x + width, y);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); muted();
+    doc.text(label.toUpperCase(), x, y + 11);
+  };
+  if (!c.signedAt) {
+    // Not signed yet: blank lines to sign on paper (or print, sign, scan and send back).
+    text(`By signing below, the customer accepts this agreement, including the ${money(amt.price)} contract price and the ${money(amt.deposit)} deposit.`, { size: 10, gap: 10 });
+    for (const [left, right] of [['Customer signature', 'Date'], ['Printed name', 'Phone'], [`For ${c.businessName || 'the installer'}`, 'Date']]) {
+      room(46); y += 30;
+      signLine(left, M, CW * 0.62); signLine(right, M + CW * 0.7, CW * 0.3);
+      y += 16;
+    }
+  } else if (signMethodOf(c) === 'upload') {
+    text(`Signed by ${c.customerName} on ${fmtDate(c.signedAt)}. The signed copy is kept on file.`, { size: 10 });
+    if (c.customerPhone) text(`Phone: ${c.customerPhone}`, { size: 10 });
+    if (c.customerEmail) text(`Email: ${c.customerEmail}`, { size: 10 });
+    y += 4;
+    text(`Accepted for ${c.businessName}.`, { size: 10 });
+  } else {
+    room(120);
+    if (signatureDataUrl) {
+      try {
+        const sig = await loadImage(signatureDataUrl);
+        const sw = Math.min(260, CW); const sh = Math.min(90, (sw * sig.naturalHeight) / Math.max(1, sig.naturalWidth));
+        doc.addImage(signatureDataUrl, 'PNG', M, y, (sh * sig.naturalWidth) / Math.max(1, sig.naturalHeight), sh);
+        y += sh + 2;
+      } catch { /* signature image unreadable: the signed-by line below still records it */ }
+    }
+    signLine('Customer signature', M, 260); y += 20;
+    text(`Signed electronically by ${c.customerName} on ${fmtDate(c.signedAt)}.`, { size: 10 });
+    if (c.customerPhone) text(`Phone: ${c.customerPhone}`, { size: 10 });
+    if (c.customerEmail) text(`Email: ${c.customerEmail}`, { size: 10 });
+    y += 4;
+    text(`Accepted for ${c.businessName}.`, { size: 10, gap: 8 });
+    if (c.signerIp) text(`Signature record: IP ${c.signerIp}`, { size: 8, color: 'muted' });
   }
-  doc.setDrawColor(28, 36, 32); doc.line(M, y, M + 260, y); y += 4;
-  text('CUSTOMER SIGNATURE', { size: 8, color: 'muted', gap: 8 });
-  text(`Signed electronically by ${c.customerName} on ${fmtDate(c.signedAt)} at ${fmtTime(c.signedAt)}.`, { size: 10 });
-  if (c.customerPhone) text(`Phone: ${c.customerPhone}`, { size: 10 });
-  if (c.customerEmail) text(`Email: ${c.customerEmail}`, { size: 10 });
-  y += 4;
-  text(`Accepted for ${c.businessName}.`, { size: 10, gap: 8 });
-  text(`Signature record: ${c.signedAt}${c.signerIp ? ` • IP ${c.signerIp}` : ''}`, { size: 8, color: 'muted' });
 
   // Page numbers
   const pages = doc.getNumberOfPages();

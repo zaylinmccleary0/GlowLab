@@ -10,18 +10,26 @@ import ContractView from './ContractView';
  * The Quote tab: the customer-facing quote for one project, on its own page.
  * With no project picked yet it lists projects to choose from.
  */
-export default function QuoteView({ project, presets, settings, onPick, onEdit, onSigned }: {
+export default function QuoteView({ project, presets, settings, onPick, onEdit, onSigned, onClose }: {
   project: Project | null; presets: Preset[]; settings: PricingSettings;
   onPick: (p: Project) => void; onEdit: (p: Project) => void; onSigned: (p: Project) => void;
+  /** Back to the list of quotes. */
+  onClose: () => void;
 }) {
   const { user } = useAuth();
   const [night, setNight] = useState(true);
   const [signing, setSigning] = useState(false);
   useEffect(() => { setSigning(false); }, [project?.id]);
   if (!project) return <QuotePicker onPick={onPick} />;
+  const voided = (p: Project) => { setSigning(false); onPick(p); window.scrollTo(0, 0); };
+  // A saved contract waiting for a signature opens straight to the contract.
+  if (project.status === 'contract' && project.contract) {
+    return <ContractView key={`${project.id}-saved`} project={project} presets={presets} settings={settings} backLabel="← All quotes"
+      onBack={() => { setSigning(false); onClose(); window.scrollTo(0, 0); }} onSigned={onSigned} onSaved={onPick} onVoided={voided} />;
+  }
   if (signing) {
-    return <ContractView project={project} presets={presets} settings={settings}
-      onBack={() => { setSigning(false); window.scrollTo(0, 0); }} onSigned={onSigned} />;
+    return <ContractView key={`${project.id}-draft`} project={project} presets={presets} settings={settings}
+      onBack={() => { setSigning(false); window.scrollTo(0, 0); }} onSigned={onSigned} onSaved={onPick} />;
   }
 
   const preset = presets.find((p) => p.id === project.presetId) ?? presets[0];
@@ -37,7 +45,7 @@ export default function QuoteView({ project, presets, settings, onPick, onEdit, 
         <label className="toggle"><input type="checkbox" checked={night} onChange={(e) => setNight(e.target.checked)} /> Night mode</label>
         <button onClick={() => window.print()}>Print</button>
         <button className="primary cta" onClick={() => { setSigning(true); window.scrollTo(0, 0); }}
-          title="Set the final price, then the customer reviews and signs on this screen">Create contract →</button>
+          title="Set the final price, then sign it here or save it to share and sign later">Create contract →</button>
       </div>
       {estimate.totalFeet === 0 && (
         <p className="error no-print">This project has no lit footage yet. Trace its lines and calibrate it in the designer to price it.</p>
@@ -102,8 +110,9 @@ function QuotePicker({ onPick }: { onPick: (p: Project) => void }) {
       <ul className="line-list">
         {projects?.map((p) => (
           <li key={p.id} className="tappable" onClick={() => { if (opening === null) void pick(p.id); }}>
-            <span style={{ flex: 1, minWidth: 0 }}><strong>{p.clientName || 'Untitled'}</strong>{p.address ? <span className="muted small"> — {p.address}</span> : null}</span>
-            <button onClick={(e) => { e.stopPropagation(); void pick(p.id); }} disabled={opening !== null}>{opening === p.id ? 'Opening…' : 'View quote'}</button>
+            <span style={{ flex: 1, minWidth: 0 }}><strong>{p.clientName || 'Untitled'}</strong>{p.address ? <span className="muted small"> — {p.address}</span> : null}
+              {p.status === 'contract' && <><br /><span className="badge pending">Contract out for signature</span></>}</span>
+            <button onClick={(e) => { e.stopPropagation(); void pick(p.id); }} disabled={opening !== null}>{opening === p.id ? 'Opening…' : p.status === 'contract' ? 'View contract' : 'View quote'}</button>
           </li>
         ))}
       </ul>

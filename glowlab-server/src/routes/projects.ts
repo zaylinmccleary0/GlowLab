@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
-import type { EstimateOptions, Project, SignedContract } from '@glowlab/shared';
+import type { EstimateOptions, Project, SignContractInput, SignedContract } from '@glowlab/shared';
 import {
-  DEFAULT_ESTIMATE_OPTIONS, computeEstimate, contractBreakdown, contractTermsFor, defaultDeposit, getPreset, lightingRatePerFoot, normalizeEstimateOptions, profileFor, round2, validateSignInput,
+  DEFAULT_ESTIMATE_OPTIONS, computeEstimate, contractBreakdown, contractTermsFor, defaultDeposit, getPreset, lightingRatePerFoot, normalizeEstimateOptions, profileFor, round2, validateSignInput, validateUploadSigned,
 } from '@glowlab/shared';
 import {
-  deleteProject, getContractTerms, getProject, getSettings, insertProject, listProjects, signProject, updateProject, voidContract, type ProjectInput,
+  deleteProject, getContractTerms, getProject, getSettings, getSignedCopy, insertProject, listProjects, prepareContract, signProject, signWithCopy,
+  updateProject, voidContract, type ProjectInput,
 } from '../db';
 
 const SIGNED_LOCKED = "This project has a signed contract, so it can't be changed. Void the contract first to edit it.";
@@ -101,6 +102,57 @@ router.post('/:id/estimate', async (req: Request, res: Response) => {
  * Signs the contract for a quote. The price is worked out here on the server from the saved
  * design and the business's current price list and terms, then frozen into the contract.
  */
+/**
+ * Builds the frozen contract for a project from the design plus the installer's edits
+ * (feet, bulbs, takedown, price, deposit). Not signed yet: signedAt is ''.
+ */
+async function buildContract(req: Request, project: Project, input: SignContractInput): Promise<{ contract?: SignedContract; error?: string }> {
+  const preset = getPreset(project.presetId);
+  if (!preset) return { error: 'Project has an unknown preset' };
+  const settings = await getSettings(req.currentUser.id);
+  const options = normalizeEstimateOptions(project.estimateOptions);
+  const { breakdown: estimate, takedownFee, error: editError } = contractBreakdown(computeEstimate(project, preset, settings, options), lightingRatePerFoot(settings, options), {
+    feet: input.feet, bulbCount: input.bulbCount, takedownIncluded: input.takedownIncluded, takedownAmount: input.takedownAmount, contractTotal: input.contractTotal,
+  });
+  if (editError) return { error: editError };
+  const contractTotal = estimate.total;
+  if (!(contractTotal > 0)) return { error: 'Set a contract price first (this design has no estimate yet).' };
+  // The contract price covers this season; the takedown / reinstall fee is recorded but collected later.
+  const depositDue = input.depositDue ?? defaultDeposit(contractTotal);
+  if (depositDue > contractTotal) return { error: "The deposit can't be more than the contract price" };
+  const businessName = req.currentUser.name;
+  return {
+    contract: {
+      signedAt: '',
+      customerName: input.customerName || project.clientName, customerPhone: input.customerPhone, customerEmail: input.customerEmail,
+      businessName, clientName: project.clientName, address: project.address,
+      presetName: preset.name, installType: options.installType, bulbSpacingInches: profileFor(settings, options).bulbSpacingInches,
+      estimate, contractTotal, takedownFee, depositDue, balanceDue: round2(contractTotal - depositDue),
+      terms: contractTermsFor(await getContractTerms(req.currentUser.id), businessName),
+      signerIp: '', signerUserAgent: '',
+    },
+  };
+}
+
+/** Saves the contract to be signed later (by email/paper, or in the app another time). */
+router.post('/:id/contract', async (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const project = await getProject(req.currentUser.id, id);
+  if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
+  if (project.status === 'won') { res.status(409).json({ error: 'This contract is already signed.' }); return; }
+  const { input, error } = validateSignInput(req.body, { requireSignature: false });
+  if (!input) { res.status(400).json({ error }); return; }
+  const built = await buildContract(req, project, input);
+  if (!built.contract) { res.status(400).json({ error: built.error }); return; }
+  const contract: SignedContract = { ...built.contract, preparedAt: new Date().toISOString() };
+  if (!(await prepareContract(req.currentUser.id, id, contract))) { res.status(409).json({ error: 'This contract is already signed.' }); return; }
+  res.json({ project: await getProject(req.currentUser.id, id) });
+});
+
+/**
+ * Signs on the screen. A saved contract keeps its saved price and terms (only the customer's
+ * details and signature are added); otherwise the contract is built from the edits sent.
+ */
 router.post('/:id/sign', async (req: Request, res: Response) => {
   const id = String(req.params.id);
   const project = await getProject(req.currentUser.id, id);
@@ -108,31 +160,17 @@ router.post('/:id/sign', async (req: Request, res: Response) => {
   if (project.status === 'won') { res.status(409).json({ error: 'This contract is already signed.' }); return; }
   const { input, error } = validateSignInput(req.body);
   if (!input) { res.status(400).json({ error }); return; }
-  const preset = getPreset(project.presetId);
-  if (!preset) { res.status(400).json({ error: 'Project has an unknown preset' }); return; }
-  const settings = await getSettings(req.currentUser.id);
-  const options = normalizeEstimateOptions(project.estimateOptions);
-  // The design's estimate with the installer's edits (feet, bulbs, takedown, price) is what gets signed.
-  const { breakdown: estimate, takedownFee, error: editError } = contractBreakdown(computeEstimate(project, preset, settings, options), lightingRatePerFoot(settings, options), {
-    feet: input.feet, bulbCount: input.bulbCount, takedownIncluded: input.takedownIncluded, takedownAmount: input.takedownAmount, contractTotal: input.contractTotal,
-  });
-  if (editError) { res.status(400).json({ error: editError }); return; }
-  const contractTotal = estimate.total;
-  if (!(contractTotal > 0)) {
-    res.status(400).json({ error: 'Set a contract price first (this design has no estimate yet).' }); return;
+  let base: SignedContract;
+  if (project.status === 'contract' && project.contract) {
+    base = { ...project.contract, customerName: input.customerName, customerPhone: input.customerPhone || project.contract.customerPhone, customerEmail: input.customerEmail || project.contract.customerEmail };
+  } else {
+    const built = await buildContract(req, project, input);
+    if (!built.contract) { res.status(400).json({ error: built.error }); return; }
+    base = built.contract;
   }
-  // The contract price covers this season; the takedown / reinstall fee is recorded but collected later.
-  const depositDue = input.depositDue ?? defaultDeposit(contractTotal);
-  if (depositDue > contractTotal) { res.status(400).json({ error: "The deposit can't be more than the contract price" }); return; }
   const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
-  const businessName = req.currentUser.name;
   const contract: SignedContract = {
-    signedAt: new Date().toISOString(),
-    customerName: input.customerName, customerPhone: input.customerPhone, customerEmail: input.customerEmail,
-    businessName, clientName: project.clientName, address: project.address,
-    presetName: preset.name, installType: options.installType, bulbSpacingInches: profileFor(settings, options).bulbSpacingInches,
-    estimate, contractTotal, takedownFee, depositDue, balanceDue: round2(contractTotal - depositDue),
-    terms: contractTermsFor(await getContractTerms(req.currentUser.id), businessName),
+    ...base, signedAt: new Date().toISOString(), signMethod: 'app',
     signerIp: forwarded || req.socket.remoteAddress || '',
     signerUserAgent: String(req.headers['user-agent'] ?? '').slice(0, 300),
   };
@@ -142,10 +180,41 @@ router.post('/:id/sign', async (req: Request, res: Response) => {
   res.json({ project: await getProject(req.currentUser.id, id) });
 });
 
-/** Voids a signed contract and turns the project back into an editable quote. */
+/** A saved contract was signed on paper or by email: keep the signed copy and make it a project. */
+router.post('/:id/upload-signed', async (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const project = await getProject(req.currentUser.id, id);
+  if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
+  if (project.status === 'won') { res.status(409).json({ error: 'This contract is already signed.' }); return; }
+  if (project.status !== 'contract' || !project.contract) { res.status(400).json({ error: 'Save the contract first, then upload the signed copy.' }); return; }
+  const { input, error } = validateUploadSigned(req.body);
+  if (!input) { res.status(400).json({ error }); return; }
+  const type = /^data:([^;,]+);/.exec(input.fileDataUrl)?.[1] ?? '';
+  const contract: SignedContract = {
+    ...project.contract,
+    customerName: input.customerName ?? project.contract.customerName,
+    signedAt: input.signedDate ? `${input.signedDate}T12:00:00.000Z` : new Date().toISOString(),
+    signMethod: 'upload', signedCopyName: input.fileName, signedCopyType: type, signerIp: '', signerUserAgent: '',
+  };
+  if (!(await signWithCopy(req.currentUser.id, id, contract, input.fileDataUrl))) {
+    res.status(409).json({ error: 'This contract was already signed or changed. Reload and try again.' }); return;
+  }
+  res.json({ project: await getProject(req.currentUser.id, id) });
+});
+
+/** The uploaded signed copy (photo or PDF). */
+router.get('/:id/signed-copy', async (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const project = await getProject(req.currentUser.id, id);
+  const dataUrl = project ? await getSignedCopy(req.currentUser.id, id) : null;
+  if (!project || !dataUrl) { res.status(404).json({ error: 'No signed copy on file' }); return; }
+  res.json({ dataUrl, name: project.contract?.signedCopyName ?? 'Signed contract', type: project.contract?.signedCopyType ?? '' });
+});
+
+/** Voids a signed contract (or cancels a saved one) and turns the project back into an editable quote. */
 router.post('/:id/void', async (req: Request, res: Response) => {
   const id = String(req.params.id);
-  if (!(await voidContract(req.currentUser.id, id))) { res.status(404).json({ error: 'No signed contract to void' }); return; }
+  if (!(await voidContract(req.currentUser.id, id))) { res.status(404).json({ error: 'No contract to void' }); return; }
   res.json({ project: await getProject(req.currentUser.id, id) });
 });
 

@@ -175,6 +175,31 @@ await req(`/api/projects/${cq.id}/void`, { method: 'POST', token, body: {} });
 let overTotal = false;
 try { await req(`/api/projects/${cq.id}/sign`, { method: 'POST', token, body: { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, takedownIncluded: true, takedownAmount: 120, depositDue: 400 } }); } catch { overTotal = true; }
 check('deposit over the price rejected even with a takedown fee', overTotal, true);
+// Save a contract to sign later -> sign it in the app, or upload the signed copy
+const post = (path, body) => req(`/api/projects/${cq.id}${path}`, { method: 'POST', token, body });
+const fails = async (fn) => { try { await fn(); return false; } catch { return true; } };
+check('uploading a signed copy without a saved contract rejected', await fails(() => post('/upload-signed', { fileDataUrl: SIG, fileName: 'x.png' })), true);
+const { project: saved } = await post('/contract', { contractTotal: 500 });
+check('saved contract waits for a signature', [saved.status, saved.contract.signedAt, saved.contract.contractTotal, saved.contract.depositDue, saved.contract.customerName], ['contract', '', 500, 250, 'Contract House']);
+check('saved contract has its date', typeof saved.contract.preparedAt, 'string');
+check('list shows it awaiting signature', (await req('/api/projects', { token })).projects.find((p) => p.id === cq.id).status, 'contract');
+const { project: signedLater } = await post('/sign', { customerName: 'Pat', signatureDataUrl: SIG, agreed: true, contractTotal: 9 });
+check('signing a saved contract keeps its price', [signedLater.status, signedLater.contract.contractTotal, signedLater.contract.signMethod, signedLater.contract.customerName], ['won', 500, 'app', 'Pat']);
+await post('/void', {});
+await post('/contract', { contractTotal: 640, customerEmail: 'lee@example.test' });
+check('non-image upload rejected', await fails(() => post('/upload-signed', { fileDataUrl: 'data:text/plain;base64,aGk=', fileName: 'x.txt' })), true);
+check('future signed date rejected', await fails(() => post('/upload-signed', { fileDataUrl: SIG, fileName: 'x.png', signedDate: '2999-01-01' })), true);
+const { project: uploaded } = await post('/upload-signed', { fileDataUrl: SIG, fileName: 'signed.png', signedDate: '2026-11-01', customerName: 'Lee Doe' });
+check('uploaded signed copy makes it a project', [uploaded.status, uploaded.contract.signMethod, uploaded.contract.signedAt, uploaded.contract.customerName, uploaded.contract.contractTotal, uploaded.hasSignedCopy],
+  ['won', 'upload', '2026-11-01T12:00:00.000Z', 'Lee Doe', 640, true]);
+check('list says it has a signed copy', (await req('/api/projects', { token })).projects.find((p) => p.id === cq.id).hasSignedCopy, true);
+const copy = await req(`/api/projects/${cq.id}/signed-copy`, { token });
+check('signed copy can be fetched', [copy.dataUrl, copy.name, copy.type], [SIG, 'signed.png', 'image/png']);
+const { project: voidedUpload } = await post('/void', {});
+check('void clears the signed copy', [voidedUpload.status, Boolean(voidedUpload.hasSignedCopy)], ['quote', false]);
+await post('/contract', {});
+const { project: cancelled } = await post('/void', {});
+check('a saved contract can be cancelled', [cancelled.status, cancelled.contract], ['quote', null]);
 await req(`/api/projects/${cq.id}`, { method: 'DELETE', token });
 await req('/api/settings/contract-terms', { method: 'PUT', token, body: { terms: null } });
 
